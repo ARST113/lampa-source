@@ -20,6 +20,8 @@
   var LOGO_BLIND = {};
   var TITLE_MEMORY = {};
   var ITEM_TITLE_MEMORY = {};
+  var EXTRA_VALUE_MEMORY = {};
+  var PLAYBACK_MEMORY = {};
 
   var aside = false;
 
@@ -159,6 +161,66 @@
     if (!key) return title;
     if (!ITEM_TITLE_MEMORY[key]) ITEM_TITLE_MEMORY[key] = title;
     return ITEM_TITLE_MEMORY[key];
+  }
+
+  function stableExtraValue(key, value, explicit) {
+    value = String(value == null ? '' : value).trim();
+    if (!key) return value;
+    var remembered = EXTRA_VALUE_MEMORY[key] || '';
+    if (explicit) {
+      if (value) EXTRA_VALUE_MEMORY[key] = value;
+      return value || remembered;
+    }
+    var clipped = /\.{3}|\u2026/.test(value);
+    var rememberedClipped = /\.{3}|\u2026/.test(remembered);
+    if (!remembered || (rememberedClipped && value && !clipped)) {
+      EXTRA_VALUE_MEMORY[key] = value;
+    }
+    return EXTRA_VALUE_MEMORY[key] || value;
+  }
+
+  function rememberPlayback(payload) {
+    var data = payload;
+    if (payload && payload.data && !payload.item && !payload.timeline && !payload.card && !payload.movie) {
+      data = payload.data;
+    }
+    var item = data && (data.item || data.currentItem || data);
+    if (!item) return;
+    var card = item.card || item.movie || (data && (data.card || data.movie)) || movie;
+    var key = movieIdentity(card);
+    var timeline = item.timeline || (data && data.timeline) || {};
+    var hash = String(timeline.hash || item.timeline_hash || '');
+    var season = parseInt(item.season || (data && data.season), 10) || 0;
+    var episode = parseInt(item.episode || (data && data.episode), 10) || 0;
+    if (!key || (!hash && !episode)) return;
+    PLAYBACK_MEMORY[key] = { hash: hash, season: season, episode: episode, at: Date.now() };
+  }
+
+  function playbackResume(list) {
+    var hint = PLAYBACK_MEMORY[movieIdentity(movie)];
+    if (!hint || !list || !list.length) return null;
+    var picked = null;
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (!isStarted(list[i])) continue;
+      if (hint.hash && String(list[i].hash || '') === hint.hash) {
+        picked = list[i];
+        break;
+      }
+    }
+    if (!picked && hint.episode) {
+      for (i = 0; i < list.length; i++) {
+        if (!isStarted(list[i]) || parseInt(list[i].num, 10) !== hint.episode) continue;
+        if (hint.season && list[i].season && parseInt(list[i].season, 10) !== hint.season) continue;
+        picked = list[i];
+        break;
+      }
+    }
+    if (!picked) return null;
+    for (i = 0; i < list.length; i++) {
+      if (list[i] !== picked && isStarted(list[i]) && resumeUpdated(list[i]) > hint.at) return null;
+    }
+    return picked;
   }
 
   function enabled() { return get(ENABLED_KEY, true) !== false; }
@@ -1054,7 +1116,13 @@
       var value = node.children('div').not('.hide').last().text().trim();
       if (!value) value = node.children('div').last().text().trim();
       if (!label && !value) return;
-      out.push({ node: node, label: label, value: value || label });
+      var memoryKey = movieIdentity(movie) + '|extra:' + out.length + ':' + label;
+      out.push({
+        node: node,
+        label: label,
+        value: stableExtraValue(memoryKey, value || label, false),
+        memory_key: memoryKey
+      });
     });
     return out;
   }
@@ -2030,6 +2098,7 @@
       hash: hash,
       line: line,
       viewed: origin.find('.online-prestige__viewed').length > 0,
+      season: seasonNumber() || 1,
       num: num,
       numbered: origin.find('.online-prestige__episode-number').length > 0,
       title: origin.find('.online-prestige__title').text().trim(),
@@ -2117,6 +2186,9 @@
       return !item.soon;
     });
     if (!list.length) return null;
+
+    var selected = playbackResume(list);
+    if (selected) return selected;
 
     var started = null;
     for (i = 0; i < list.length; i++) {
@@ -3113,7 +3185,7 @@
     switchDone();
     lockRelease();
 
-    extra_menu = { key: key, params: captured };
+    extra_menu = { key: key, params: captured, memory_key: entry.memory_key };
     captured = null;
     ui_open = key;
 
@@ -3142,6 +3214,7 @@
       });
       bind(box, function () {
         if (item.selected) return uiToggle(key);
+        stableExtraValue(extra_menu.memory_key, item.title || item.name || '', true);
         ui_open = '';
         buildRows();
         if (ui.list) listHold().empty().append(skeleton(4));
@@ -4354,6 +4427,7 @@
   function hookPlayer() {
     try {
       if (Lampa.Player && Lampa.Player.listener) {
+        Lampa.Player.listener.follow('start', rememberPlayback);
         Lampa.Player.listener.follow('destroy', function () {
           outside = false;
           refreshBurst();
@@ -4361,6 +4435,12 @@
         Lampa.Player.listener.follow('external', function () {
           outside = true;
         });
+      }
+    } catch (e) {}
+
+    try {
+      if (Lampa.PlayerPlaylist && Lampa.PlayerPlaylist.listener && Lampa.PlayerPlaylist.listener.follow) {
+        Lampa.PlayerPlaylist.listener.follow('select', rememberPlayback);
       }
     } catch (e) {}
 
