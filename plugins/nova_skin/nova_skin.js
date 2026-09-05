@@ -179,6 +179,50 @@
     return EXTRA_VALUE_MEMORY[key] || value;
   }
 
+  function stableClarificationValue(card, value, stored) {
+    var key = movieIdentity(card) + '|clarification';
+    stored = String(stored == null ? '' : stored).trim();
+    return stored
+      ? stableExtraValue(key, stored, true)
+      : stableExtraValue(key, value, false);
+  }
+
+  function clarificationStorageValue(card) {
+    if (!card) return '';
+    var all = get('clarification_search', {});
+    if (!all || typeof all !== 'object') return '';
+
+    var media = card.name || card.first_air_date || card.number_of_seasons ? 'tv' : 'movie';
+    var source = card.source || 'tmdb';
+    var id = card.id || card.tmdb_id || card.kinopoisk_id || card.imdb_id;
+    var key = id ? ['v2', source, media, id].join(':') : '';
+    var value = key ? all[key] : '';
+
+    if (!value) {
+      var legacyName = card.number_of_seasons ? card.original_name : card.original_title;
+      legacyName = legacyName || card.original_name || card.original_title || card.name || card.title;
+      try {
+        if (legacyName && Lampa.Utils && typeof Lampa.Utils.hash === 'function') {
+          value = all[Lampa.Utils.hash(legacyName)];
+        }
+      } catch (e) {}
+    }
+
+    return String(value || '').trim();
+  }
+
+  function stabilizeClarification() {
+    if (!movie) return;
+    var stored = clarificationStorageValue(movie);
+    $('.nova-chip--clarification .nova-chip__label').each(function () {
+      var label = $(this);
+      if (!label.closest('.nova-skin-root').length) return;
+      var current = label.text().trim();
+      var stable = stableClarificationValue(movie, current, stored);
+      if (stable && stable !== current) label.text(stable);
+    });
+  }
+
   function rememberPlayback(payload) {
     var data = payload;
     if (payload && payload.data && !payload.item && !payload.timeline && !payload.card && !payload.movie) {
@@ -4315,12 +4359,19 @@
     observer = new MutationObserver(function (records) {
       for (var i = 0; i < records.length; i++) {
         var node = records[i].target;
-        if (node && node.nodeType === 1 && $(node).closest('.nova-skin-root').length) continue;
+        if (node && node.nodeType === 1 && $(node).closest('.nova-skin-root').length) {
+          if ($(node).closest('.nova-chip--clarification').length ||
+              $(node).find('.nova-chip--clarification').length) {
+            stabilizeClarification();
+          }
+          continue;
+        }
         if (pendingLive()) reattach();
         return scheduleNow();
       }
     });
     observer.observe(target, { childList: true, subtree: true });
+    stabilizeClarification();
   }
 
   function detach() {
