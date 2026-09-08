@@ -89,7 +89,7 @@ jobs:
             gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && docker compose -f .devcontainer/lab.compose.yml logs --tail=150 lampac 2>&1 || true' || true
             echo
             echo '=== start-lab retry ==='
-            gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && bash .devcontainer/start-lab.sh' || true
+            gh codespace ssh -c "$name" "cd /workspaces/lampa-source && LAB_PUBLIC_HOST=${name}-9118.app.github.dev bash .devcontainer/start-lab.sh" || true
             echo
             echo '=== rendered runtime config ==='
             gh codespace ssh -c "$name" 'sed -n "1,45p" /tmp/lampa-full-stack-lab.init.conf 2>&1 || true' || true
