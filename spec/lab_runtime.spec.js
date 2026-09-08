@@ -35,13 +35,13 @@ describe('Codespaces full-stack lab runtime', () => {
     expect(start).not.toContain('exec "$ROOT/.devcontainer/smoke-lab.sh"');
   });
 
-  it('renders the Codespaces public host into Lampac runtime configuration', () => {
+  it('renders the Codespaces public host without requiring Python in the Codespace', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lampa-lab-conf-'));
     const output = path.join(dir, 'init.conf');
 
     try {
-      const result = spawnSync('python3', [
-        '.devcontainer/render-lab-init.py',
+      const result = spawnSync('bash', [
+        '.devcontainer/render-lab-init.sh',
         '--input', '.devcontainer/lab.init.conf',
         '--output', output,
       ], {
@@ -57,7 +57,8 @@ describe('Codespaces full-stack lab runtime', () => {
       const compose = read('.devcontainer/lab.compose.yml');
       const start = read('.devcontainer/start-lab.sh');
       expect(compose).toContain('LAB_INIT_CONF');
-      expect(start).toContain('render-lab-init.py');
+      expect(start).toContain('render-lab-init.sh');
+      expect(start).not.toContain('python3');
     }
     finally {
       fs.rmSync(dir, { recursive: true, force: true });
