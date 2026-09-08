@@ -2,8 +2,11 @@ const { defineConfig } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: '../e2e',
-  testMatch: ['**/lampac-resume-live-real.e2e.js'],
-  timeout: 210_000,
+  testMatch: [
+    '**/lampac-resume-live-real.e2e.js',
+    '**/lampac-resume-tv-live-real.e2e.js',
+  ],
+  timeout: 240_000,
   expect: { timeout: 30_000 },
   retries: 0,
   reporter: [
