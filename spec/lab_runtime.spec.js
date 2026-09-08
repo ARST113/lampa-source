@@ -29,18 +29,46 @@ function renderWithEnv(env) {
 }
 
 describe('Codespaces full-stack lab runtime', () => {
-  it('forwards only Lampac port 9118 and starts the lab on Codespace start', () => {
+  it('keeps one public Codespaces port and starts the lab on Codespace start', () => {
     const config = JSON.parse(read('.devcontainer/devcontainer.json'));
     expect(config.forwardPorts).toEqual([9118]);
     expect(config.portsAttributes['9118'].label).toBe('Lampac Full Stack Lab');
     expect(config.postStartCommand).toContain('.devcontainer/start-lab.sh');
   });
 
-  it('runs one Lampac service using the published NextGen image', () => {
+  it('routes the public 9118 gateway to Lampac and a dedicated current TorrServer sidecar', () => {
     const compose = read('.devcontainer/lab.compose.yml');
+    const gateway = read('.devcontainer/lab.nginx.conf');
     expect(compose).toContain('ghcr.io/lampac-nextgen/lampac');
+    expect(compose).toContain('ghcr.io/yourok/torrserver@sha256:4bf54fbd0cc095cdca8d854f95afee4223072ab7fdf378d0da50e5bb86dd8e77');
+    expect(compose).toContain('nginx:');
     expect(compose).toContain('9118:9118');
     expect(compose).not.toContain('8090:8090');
+    expect(gateway).toContain('proxy_pass http://lampac:9118');
+    expect(gateway).toContain('proxy_pass http://torrserver:8090');
+    expect(gateway).toContain('location = /ts');
+    expect(gateway).toContain('location ^~ /ts/');
+  });
+
+  it('persists TorrServer state and enables TrackTimecode without mutating unrelated settings', () => {
+    const compose = read('.devcontainer/lab.compose.yml');
+    const configure = read('.devcontainer/configure-torrserver.sh');
+    const start = read('.devcontainer/start-lab.sh');
+    expect(compose).toContain('torrserver-data:/opt/ts');
+    expect(compose).toContain('torrserver-data:');
+    expect(configure).toContain('"TrackTimecode":false');
+    expect(configure).toContain('"TrackTimecode":true');
+    expect(configure).toContain('"action":"set","sets"');
+    expect(start).toContain('configure-torrserver.sh');
+  });
+
+  it('smokes TrackTimecode through the same /ts gateway contract consumed by Lampa', () => {
+    const smoke = read('.devcontainer/smoke-lab.sh');
+    expect(smoke).toContain('/ts/echo');
+    expect(smoke).toContain('/ts/settings');
+    expect(smoke).toContain('/ts/viewed');
+    expect(smoke).toContain('"timecode":17');
+    expect(smoke).toContain('TRACK_TIMECODE');
   });
 
   it('does not overlay Lampac writable database/cache directories with root-owned named volumes', () => {
