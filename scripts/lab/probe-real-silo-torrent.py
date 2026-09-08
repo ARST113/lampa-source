@@ -3,7 +3,6 @@ import json
 import os
 import re
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -71,7 +70,6 @@ try:
     if not BACKEND.startswith('http'):
         raise RuntimeError('BACKEND is missing')
 
-    # Clean a previous copy if the persistent test volume already contains this hash.
     try:
         post('/ts/torrents', {'action': 'drop', 'hash': HASH}, timeout=10)
     except Exception:
@@ -136,6 +134,9 @@ try:
             except Exception as exc:
                 result['stream_error'] = str(exc)
                 print('REAL_SILO_STREAM_UNAVAILABLE', str(exc)[:300])
+except Exception as exc:
+    result['error'] = str(exc)
+    print('REAL_SILO_PROBE_ERROR', str(exc)[:500])
 finally:
     try:
         post('/ts/torrents', {'action': 'drop', 'hash': HASH}, timeout=10)
@@ -143,5 +144,5 @@ finally:
         pass
     OUT.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
 
-# This is a live network diagnostic. Peer/metadata availability is external and therefore does
-# not fail the Resume correctness gate; the JSON artifact records the exact outcome.
+# Live peer/metadata availability is external, so this diagnostic does not fail the Resume
+# correctness gate. The JSON artifact records exactly how far the real torrent path progressed.
