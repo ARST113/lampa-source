@@ -1,9 +1,9 @@
 {
   "repository": "ARST113/lampa-source",
   "ref": "feat/torrserver-tracktimecode-lab",
-  "sha": "69d6d333a1d5295032422cc625823cf31e3bb6ad",
-  "run_id": "34266613508",
+  "sha": "1537715df456385fe4cc49150b374b2c9b389800",
+  "run_id": "34267203183",
   "run_attempt": "1",
-  "published_at": "2026-09-08T19:04:20.379353+00:00",
+  "published_at": "2026-09-08T19:10:04.524150+00:00",
   "profile": "full-experimental"
 }
