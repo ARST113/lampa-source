@@ -73,6 +73,9 @@ jobs:
             echo '=== sync workspace ==='
             gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && git fetch origin feat/github-full-stack-lab && git reset --hard origin/feat/github-full-stack-lab' || true
             echo
+            echo '=== Codespace environment ==='
+            gh codespace ssh -c "$name" 'printf "CODESPACE_NAME=%s\nGITHUB_CODESPACES_PORT_FORWARDING_DOMAIN=%s\n" "${CODESPACE_NAME:-<unset>}" "${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-<unset>}"' || true
+            echo
             echo '=== remote docker ps ==='
             gh codespace ssh -c "$name" 'docker ps -a || true' || true
             echo
@@ -87,6 +90,18 @@ jobs:
             echo
             echo '=== start-lab retry ==='
             gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && bash .devcontainer/start-lab.sh' || true
+            echo
+            echo '=== rendered runtime config ==='
+            gh codespace ssh -c "$name" 'sed -n "1,45p" /tmp/lampa-full-stack-lab.init.conf 2>&1 || true' || true
+            echo
+            echo '=== config inside Lampac container ==='
+            gh codespace ssh -c "$name" 'docker exec lampa-full-stack-lab sh -lc '\''sed -n "1,45p" /lampac/init.conf 2>&1 || true'\''' || true
+            echo
+            echo '=== Lampac bind mounts ==='
+            gh codespace ssh -c "$name" 'docker inspect lampa-full-stack-lab --format '\''{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'\'' 2>&1 || true' || true
+            echo
+            echo '=== generated lampainit host references ==='
+            gh codespace ssh -c "$name" 'curl -fsS --max-time 20 http://127.0.0.1:9118/lampainit.js | grep -Eo "https?://[^\"'\'' ]+" | head -30 || true' || true
             echo
             echo '=== docker ps after retry ==='
             gh codespace ssh -c "$name" 'docker ps -a || true' || true
