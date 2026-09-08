@@ -1,3 +1,4 @@
+const path = require('path');
 const { test, expect } = require('@playwright/test');
 
 const expectedPlugins = [
@@ -15,6 +16,7 @@ const expectedPlugins = [
 ];
 
 test('loads the full experimental plugin profile and TorServer client', async ({ page }) => {
+  await page.addInitScript({ path: path.resolve('test-stand/profile.js') });
   await page.addInitScript(() => {
     localStorage.setItem('language', 'ru');
     localStorage.setItem('tmdb_lang', 'ru');
@@ -23,7 +25,7 @@ test('loads the full experimental plugin profile and TorServer client', async ({
 
   await page.goto('/');
 
-  await page.waitForFunction(() => window.appready === true, null, { timeout: 30_000 });
+  await page.waitForFunction(() => window.appready === true, null, { timeout: 45_000 });
 
   const state = await page.evaluate(() => ({
     profile: window.__LAMPA_TEST_PROFILE__,
@@ -33,6 +35,9 @@ test('loads the full experimental plugin profile and TorServer client', async ({
   }));
 
   expect(state.profile && state.profile.enabled).toBeTruthy();
+  expect(state.profile.plugins).toEqual(expectedPlugins);
+  expect(state.profile.features.torrents).toBeTruthy();
+  expect(state.profile.features.torserverClient).toBeTruthy();
 
   for (const plugin of expectedPlugins) {
     expect(state.plugins, `${plugin} should be loaded`).toContain(plugin);
