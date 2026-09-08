@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const profile = require('../test-stand/profile.js');
@@ -62,6 +63,15 @@ describe('test stand Lampac backend profile', () => {
     expect(result.features.realLampac).toBe(true);
     expect(result.features.parser).toBe(true);
     expect(result.features.torserverProxy).toBe(true);
+  });
+
+  it('waits for the stock Lampa runtime before injecting Lampac init', () => {
+    expect(profile.runtimeReady({ appready: true, Lampa: {} })).toBe(true);
+    expect(profile.runtimeReady({ appready: false, Lampa: {} })).toBe(false);
+    expect(profile.runtimeReady({ appready: true })).toBe(false);
+
+    const source = fs.readFileSync('test-stand/profile.js', 'utf8');
+    expect(source).not.toContain('document.write');
   });
 
   it('falls back to static mode for an invalid lampac parameter', () => {
