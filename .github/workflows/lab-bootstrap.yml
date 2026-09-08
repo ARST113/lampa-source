@@ -40,7 +40,7 @@ jobs:
           LAB_CODESPACE_REF: feat/github-full-stack-lab
         run: python3 scripts/lab/codespace_control.py status
 
-      - name: Capture remote diagnostics
+      - name: Capture Codespaces port and creation diagnostics
         if: always()
         env:
           GH_TOKEN: ${{ secrets.CODESPACES_PAT }}
@@ -56,24 +56,29 @@ jobs:
           PY
           )"
           if [[ -z "$name" ]]; then
-            echo 'No Codespace name available for SSH diagnostics.'
+            echo 'No Codespace name available for diagnostics.'
             exit 0
           fi
 
           mkdir -p lab-artifacts
           {
-            echo '=== remote docker ps ==='
-            gh codespace ssh -c "$name" -- bash -lc 'docker ps -a || true'
+            echo '=== forwarded ports before visibility ==='
+            gh codespace ports -c "$name" --json sourcePort,visibility,browseUrl || true
             echo
-            echo '=== workspace ==='
-            gh codespace ssh -c "$name" -- bash -lc 'pwd; echo CODESPACE_VSCODE_FOLDER=${CODESPACE_VSCODE_FOLDER:-}; ls -la "${CODESPACE_VSCODE_FOLDER:-/workspaces/lampa-source}/.devcontainer" 2>&1 || true'
+            echo '=== force 9118 public ==='
+            gh codespace ports visibility 9118:public -c "$name" || true
             echo
-            echo '=== local 9118 ==='
-            gh codespace ssh -c "$name" -- bash -lc 'curl -sv --max-time 10 http://127.0.0.1:9118/version?type=hash 2>&1 || true'
+            echo '=== forwarded ports after visibility ==='
+            gh codespace ports -c "$name" --json sourcePort,visibility,browseUrl || true
             echo
-            echo '=== Lampac compose logs ==='
-            gh codespace ssh -c "$name" -- bash -lc 'cd "${CODESPACE_VSCODE_FOLDER:-/workspaces/lampa-source}" && docker compose -f .devcontainer/lab.compose.yml logs --tail=250 lampac 2>&1 || true'
-          } | tee lab-artifacts/remote-diagnostics.txt
+            echo '=== unauthenticated public health ==='
+            backend="https://${name}-9118.app.github.dev"
+            curl -sS -D - --max-time 20 "$backend/version?type=hash" -o /tmp/lab-public-body || true
+            head -c 1000 /tmp/lab-public-body 2>/dev/null || true
+            echo
+          } | tee lab-artifacts/port-diagnostics.txt
+
+          gh codespace logs -c "$name" > lab-artifacts/codespace-creation.log 2>&1 || true
 
       - name: Fail when ensure failed
         if: steps.ensure.outcome != 'success'
