@@ -2,6 +2,8 @@
 import argparse
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 import time
@@ -33,8 +35,14 @@ def ensure_decision(state):
     return 'wait'
 
 
+def public_host(name, port=DEFAULT_PORT):
+    if not re.fullmatch(r'[A-Za-z0-9-]+', str(name or '')):
+        raise ValueError('Invalid Codespace name')
+    return f'{name}-{port}.app.github.dev'
+
+
 def backend_url(name, port=DEFAULT_PORT):
-    return f'https://{name}-{port}.app.github.dev'
+    return f'https://{public_host(name, port)}'
 
 
 def pages_url(backend):
@@ -166,6 +174,21 @@ def remote_command(name, token, command, capture=False):
     return run_checked(remote_ssh_args(name, command), token, capture=capture)
 
 
+def remote_start_command(name, ref=DEFAULT_REF):
+    host = public_host(name)
+    return (
+        'cd /workspaces/lampa-source && '
+        f'git fetch origin {shlex.quote(ref)} && '
+        'git reset --hard FETCH_HEAD && '
+        f'LAB_PUBLIC_HOST={shlex.quote(host)} bash .devcontainer/start-lab.sh'
+    )
+
+
+def prepare_runtime(name, token, ref=DEFAULT_REF):
+    make_port_public(name, token)
+    remote_command(name, token, remote_start_command(name, ref))
+
+
 def ensure_available(client, token, item=None, ref=DEFAULT_REF):
     item = item or find_lab(client)
     if item is None:
@@ -180,7 +203,7 @@ def ensure_available(client, token, item=None, ref=DEFAULT_REF):
             item = wait_for_state(client, name, 'Available')
         elif decision == 'wait':
             item = wait_for_state(client, name, 'Available')
-    make_port_public(item['name'], token)
+    prepare_runtime(item['name'], token, ref)
     return item
 
 
@@ -258,7 +281,7 @@ def control(action, token, repository, ref):
             wait_for_state(client, item['name'], 'Shutdown')
             client.start_codespace(item['name'])
             item = wait_for_state(client, item['name'], 'Available')
-            make_port_public(item['name'], token)
+            prepare_runtime(item['name'], token, ref)
         else:
             item = ensure_available(client, token, item=item, ref=ref)
     else:
