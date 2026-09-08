@@ -1,0 +1,52 @@
+name: Lampac Resume Spike
+
+on:
+  push:
+    branches:
+      - spike/lampac-resume-e2e-20260908
+    paths:
+      - 'spike/lampac-resume.RUN'
+
+permissions:
+  contents: read
+
+jobs:
+  resume-spike:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      LAMPA_TEST_LAMPAC_URL: https://lampa-full-stack-lab-r54vrp44jj4cx796-9118.app.github.dev
+      LAMPA_TEST_PAGES_URL: https://arst113.github.io/lampa-source/test/
+
+    steps:
+      - name: Checkout spike
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Lampac Resume core checks
+        run: node spike/lampac-resume-core-check.js
+
+      - name: Run Lampac Resume live browser checks
+        run: npx playwright test e2e/lampac-resume-spike.e2e.js --workers=1
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lampac-resume-spike-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+            spike/lampac-resume-result.json
+          if-no-files-found: ignore
+          retention-days: 7
