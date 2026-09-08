@@ -13,14 +13,46 @@ permissions:
 jobs:
   resume-spike:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       LAMPA_TEST_LAMPAC_URL: https://lampa-full-stack-lab-r54vrp44jj4cx796-9118.app.github.dev
       LAMPA_TEST_PAGES_URL: https://arst113.github.io/lampa-source/test/
+      LAMPA_TEST_TORRSERVER_URL: https://lampa-full-stack-lab-r54vrp44jj4cx796-8090.app.github.dev
+      LAB_CODESPACE: lampa-full-stack-lab-r54vrp44jj4cx796
 
     steps:
       - name: Checkout spike
         uses: actions/checkout@v7
+
+      - name: Start current TorrServer sidecar in real Codespace
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACES_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh codespace ssh -c "$LAB_CODESPACE" -- 'docker rm -f lampa-full-stack-torrserver >/dev/null 2>&1 || true; docker pull ghcr.io/yourok/torrserver:latest; docker run -d --name lampa-full-stack-torrserver --restart unless-stopped -p 8090:8090 ghcr.io/yourok/torrserver:latest'
+          gh codespace ports visibility 8090:public -c "$LAB_CODESPACE"
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 10 "$LAMPA_TEST_TORRSERVER_URL/echo"; then exit 0; fi
+            sleep 2
+          done
+          echo 'TorrServer sidecar did not become public' >&2
+          exit 1
+
+      - name: Probe real TorrServer viewed timecode contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          hash='0123456789abcdef0123456789abcdef01234567'
+          echo '=== echo ==='
+          curl -fsS "$LAMPA_TEST_TORRSERVER_URL/echo"
+          echo
+          echo '=== viewed set ==='
+          curl -fsS -H 'Content-Type: application/json' -d "{\"action\":\"set\",\"hash\":\"$hash\",\"file_index\":1,\"timecode\":65}" "$LAMPA_TEST_TORRSERVER_URL/viewed"
+          echo
+          echo '=== viewed list ==='
+          curl -fsS -H 'Content-Type: application/json' -d "{\"action\":\"list\",\"hash\":\"$hash\",\"file_index\":1}" "$LAMPA_TEST_TORRSERVER_URL/viewed"
+          echo
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
