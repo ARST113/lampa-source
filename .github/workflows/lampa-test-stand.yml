@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: lampa-pages-test-stand
+  group: lampa-pages-test-stand-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
