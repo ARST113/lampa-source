@@ -1,0 +1,132 @@
+name: Lampa test stand
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+      - 'test/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lampa-pages-test-stand
+  cancel-in-progress: true
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run Vitest regression suite
+        run: npm test -- --run
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser smoke tests
+        run: npm run test:e2e
+
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Stage tested build on gh-pages
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f build/web/index.html
+          test -f build/web/app.js
+          test -f build/web/css/app.css
+
+          git fetch origin gh-pages:refs/heads/gh-pages
+          rm -rf /tmp/lampa-pages
+          git worktree add /tmp/lampa-pages gh-pages
+
+          rm -rf /tmp/lampa-pages/test
+          mkdir -p /tmp/lampa-pages/test
+          cp -a build/web/. /tmp/lampa-pages/test/
+
+          sed -i 's#http://www.youtube.com/iframe_api#https://www.youtube.com/iframe_api#g' /tmp/lampa-pages/test/index.html
+          touch /tmp/lampa-pages/.nojekyll
+
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          from pathlib import Path
+
+          metadata = {
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'ref': os.environ['GITHUB_REF_NAME'],
+              'sha': os.environ['GITHUB_SHA'],
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'published_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+          }
+
+          Path('/tmp/lampa-pages/test/build.json').write_text(
+              json.dumps(metadata, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+          cd /tmp/lampa-pages
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .nojekyll test
+          git commit -m "Deploy test stand ${GITHUB_SHA::12}"
+          git push origin gh-pages
+
+      - name: Verify GitHub Pages publication
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          url='https://arst113.github.io/lampa-source/test/build.json'
+
+          for i in $(seq 1 60); do
+            body="$(curl -fsSL --connect-timeout 10 --max-time 20 "${url}?run=${GITHUB_RUN_ID}&attempt=${GITHUB_RUN_ATTEMPT}&check=${i}" 2>/dev/null || true)"
+
+            if printf '%s' "$body" | grep -Fq "\"sha\": \"${GITHUB_SHA}\""; then
+              echo "GitHub Pages is serving ${GITHUB_SHA}"
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo 'GitHub Pages did not publish the expected SHA.' >&2
+          echo "Expected: ${GITHUB_SHA}" >&2
+          echo "Last response: ${body:-<empty>}" >&2
+          exit 1
