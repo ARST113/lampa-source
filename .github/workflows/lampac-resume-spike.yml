@@ -36,8 +36,8 @@ jobs:
       - name: Run Lampac Resume core checks
         run: node spike/lampac-resume-core-check.js
 
-      - name: Run Lampac Resume live browser checks
-        run: npx playwright test --config=spike/playwright.resume.config.js --workers=1
+      - name: Run Lampac Resume full live browser checks
+        run: npx playwright test --config=spike/playwright.resume.full.config.js --workers=1
 
       - name: Upload diagnostics
         if: always()
@@ -45,7 +45,7 @@ jobs:
         with:
           name: lampac-resume-spike-${{ github.run_id }}
           path: |
-            playwright-report-resume/
+            playwright-report-resume-full/
             test-results/
             spike/lampac-resume-result.json
           if-no-files-found: ignore
