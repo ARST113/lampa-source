@@ -6,7 +6,9 @@ from scripts.lab.codespace_control import (
     backend_url,
     ensure_decision,
     pages_url,
+    public_host,
     redact,
+    remote_start_command,
     remote_ssh_args,
     select_codespace,
 )
@@ -40,11 +42,24 @@ class ControlTests(unittest.TestCase):
     def test_ensure_does_not_restart_available_codespace(self):
         self.assertEqual(ensure_decision('Available'), 'keep')
 
-    def test_backend_url(self):
+    def test_public_host_and_backend_url(self):
+        self.assertEqual(
+            public_host('silver-space-123', 9118),
+            'silver-space-123-9118.app.github.dev',
+        )
         self.assertEqual(
             backend_url('silver-space-123', 9118),
             'https://silver-space-123-9118.app.github.dev',
         )
+
+    def test_remote_start_command_passes_explicit_public_host(self):
+        command = remote_start_command('silver-space-123')
+        self.assertIn(
+            'LAB_PUBLIC_HOST=silver-space-123-9118.app.github.dev',
+            command,
+        )
+        self.assertIn('bash .devcontainer/start-lab.sh', command)
+        self.assertNotIn('CODESPACE_NAME=', command)
 
     def test_pages_url_urlencodes_backend(self):
         url = pages_url('https://silver-space-123-9118.app.github.dev')
