@@ -158,8 +158,12 @@ def make_port_public(name, token, port=DEFAULT_PORT):
     run_checked(['gh', 'codespace', 'ports', 'visibility', f'{port}:public', '-c', name], token)
 
 
+def remote_ssh_args(name, command):
+    return ['gh', 'codespace', 'ssh', '-c', name, command]
+
+
 def remote_command(name, token, command, capture=False):
-    return run_checked(['gh', 'codespace', 'ssh', '-c', name, '--', 'bash', '-lc', command], token, capture=capture)
+    return run_checked(remote_ssh_args(name, command), token, capture=capture)
 
 
 def ensure_available(client, token, item=None, ref=DEFAULT_REF):
@@ -277,14 +281,14 @@ def control(action, token, repository, ref):
         if not health.get('ok'):
             raise RuntimeError(f'Lampac public health check failed: {health}')
     elif action == 'smoke':
-        remote_command(name, token, 'cd "${CODESPACE_VSCODE_FOLDER:-/workspaces/lampa-source}" && bash .devcontainer/smoke-lab.sh')
+        remote_command(name, token, 'cd /workspaces/lampa-source && bash .devcontainer/smoke-lab.sh')
     elif action == 'full':
-        remote_command(name, token, 'cd "${CODESPACE_VSCODE_FOLDER:-/workspaces/lampa-source}" && bash .devcontainer/smoke-lab.sh')
+        remote_command(name, token, 'cd /workspaces/lampa-source && bash .devcontainer/smoke-lab.sh')
     elif action == 'logs':
         output = remote_command(
             name,
             token,
-            'cd "${CODESPACE_VSCODE_FOLDER:-/workspaces/lampa-source}" && docker compose -f .devcontainer/lab.compose.yml logs --tail=250 lampac',
+            'cd /workspaces/lampa-source && docker compose -f .devcontainer/lab.compose.yml logs --tail=250 lampac',
             capture=True,
         )
         print(output)
