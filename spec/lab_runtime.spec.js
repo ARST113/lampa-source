@@ -6,6 +6,28 @@ import path from 'node:path';
 
 const read = (file) => fs.readFileSync(file, 'utf8');
 
+function renderWithEnv(env) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lampa-lab-conf-'));
+  const output = path.join(dir, 'init.conf');
+
+  try {
+    const result = spawnSync('bash', [
+      '.devcontainer/render-lab-init.sh',
+      '--input', '.devcontainer/lab.init.conf',
+      '--output', output,
+    ], {
+      encoding: 'utf8',
+      env: { ...process.env, CODESPACE_NAME: '', GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: '', ...env },
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    return JSON.parse(read(output));
+  }
+  finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 describe('Codespaces full-stack lab runtime', () => {
   it('forwards only Lampac port 9118 and starts the lab on Codespace start', () => {
     const config = JSON.parse(read('.devcontainer/devcontainer.json'));
@@ -36,33 +58,24 @@ describe('Codespaces full-stack lab runtime', () => {
   });
 
   it('renders the Codespaces public host without requiring Python in the Codespace', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lampa-lab-conf-'));
-    const output = path.join(dir, 'init.conf');
+    const config = renderWithEnv({ CODESPACE_NAME: 'silver-space-123' });
+    expect(config.listen.host).toBe('silver-space-123-9118.app.github.dev');
+    expect(config.listen.scheme).toBe('https');
 
-    try {
-      const result = spawnSync('bash', [
-        '.devcontainer/render-lab-init.sh',
-        '--input', '.devcontainer/lab.init.conf',
-        '--output', output,
-      ], {
-        encoding: 'utf8',
-        env: { ...process.env, CODESPACE_NAME: 'silver-space-123' },
-      });
+    const compose = read('.devcontainer/lab.compose.yml');
+    const start = read('.devcontainer/start-lab.sh');
+    expect(compose).toContain('LAB_INIT_CONF');
+    expect(start).toContain('render-lab-init.sh');
+    expect(start).not.toContain('python3');
+  });
 
-      expect(result.status, result.stderr || result.stdout).toBe(0);
-      const config = JSON.parse(read(output));
-      expect(config.listen.host).toBe('silver-space-123-9118.app.github.dev');
-      expect(config.listen.scheme).toBe('https');
-
-      const compose = read('.devcontainer/lab.compose.yml');
-      const start = read('.devcontainer/start-lab.sh');
-      expect(compose).toContain('LAB_INIT_CONF');
-      expect(start).toContain('render-lab-init.sh');
-      expect(start).not.toContain('python3');
-    }
-    finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+  it('prefers an explicit LAB_PUBLIC_HOST when Codespaces SSH does not expose its environment', () => {
+    const config = renderWithEnv({
+      LAB_PUBLIC_HOST: 'silver-space-123-9118.app.github.dev',
+      CODESPACE_NAME: '',
+    });
+    expect(config.listen.host).toBe('silver-space-123-9118.app.github.dev');
+    expect(config.listen.scheme).toBe('https');
   });
 
   it('enables the required Lampac modules without access DB or WAF', () => {
