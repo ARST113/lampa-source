@@ -1,0 +1,41 @@
+name: Lampa Full Stack Lab Bootstrap
+
+on:
+  push:
+    branches:
+      - feat/github-full-stack-lab
+    paths:
+      - '.github/workflows/lab-bootstrap.yml'
+      - '.devcontainer/**'
+      - 'scripts/lab/codespace_control.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lampa-full-stack-lab-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Ensure real Codespace lab
+        env:
+          CODESPACES_PAT: ${{ secrets.CODESPACES_PAT }}
+          LAB_CODESPACE_REF: feat/github-full-stack-lab
+        run: python3 scripts/lab/codespace_control.py ensure
+
+      - name: Upload bootstrap diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-bootstrap-${{ github.run_id }}
+          path: lab-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
