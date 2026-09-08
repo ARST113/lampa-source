@@ -33,8 +33,13 @@ jobs:
       - name: Verify stable Lampac backend is live
         run: |
           set -euo pipefail
-          curl -fsS "$LAMPA_TEST_LAMPAC_URL/version?type=hash"
-          curl -fsS "$LAMPA_TEST_LAMPAC_URL/lampainit.js" | grep -Eq 'online\.js|Lampac'
+          curl -fsS "$LAMPA_TEST_LAMPAC_URL/version?type=hash" -o /tmp/lampac-version
+          test -s /tmp/lampac-version
+          cat /tmp/lampac-version
+          curl -fsS "$LAMPA_TEST_LAMPAC_URL/lampainit.js" -o /tmp/lampainit.js
+          test -s /tmp/lampainit.js
+          grep -Eq 'online\.js|Lampac' /tmp/lampainit.js
+          echo 'LAMPAC_ONLINE_HEALTH_OK'
 
       - name: Install browser dependencies
         run: npm install --no-audit --no-fund
