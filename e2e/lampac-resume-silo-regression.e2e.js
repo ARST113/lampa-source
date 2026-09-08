@@ -1,20 +1,12 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
-const zlib = require('zlib');
 
 const backend = (process.env.LAMPA_TEST_LAMPAC_URL || '').replace(/\/+$/, '');
 const pages = (process.env.LAMPA_TEST_PAGES_URL || 'https://arst113.github.io/lampa-source/test/').replace(/\/+$/, '/');
 
 function pluginSource() {
-  const parts = [1, 2, 3, 4, 5].map((n) =>
-    fs.readFileSync(path.join(__dirname, '..', 'spike', `lampac-resume-fixture.part${n}`), 'utf8').trim()
-  ).join('');
-  return zlib.gunzipSync(Buffer.from(parts, 'base64')).toString('utf8');
-}
-
-function hotfixSource() {
-  return fs.readFileSync(path.join(__dirname, '..', 'spike', 'lampac-resume-0.2.3-hotfix.js'), 'utf8');
+  return fs.readFileSync(path.join(__dirname, '..', 'plugins', 'watch_resume', 'watch_resume.js'), 'utf8');
 }
 
 async function openLab(page) {
@@ -29,12 +21,21 @@ async function openLab(page) {
 test.skip(!backend, 'LAMPA_TEST_LAMPAC_URL is required');
 
 test('LIVE regression: Silo E01 is not overwritten by E10 and TorrServer resumes index=1 at 65s', async ({ page }) => {
+  const tsTraffic = [];
+  page.on('response', async (response) => {
+    if (!/\/ts\/viewed(?:\?|$)/.test(response.url())) return;
+    tsTraffic.push({ type: 'response', url: response.url(), status: response.status(), headers: await response.allHeaders() });
+  });
+  page.on('requestfailed', (request) => {
+    if (/\/ts\/viewed(?:\?|$)/.test(request.url())) tsTraffic.push({ type: 'failed', url: request.url(), error: request.failure() });
+  });
+
   await openLab(page);
 
   const card = {
     id: 125988,
     source: 'cub',
-    type: 'movie', // reproduces the real stale/misleading card.type from the user log
+    type: 'movie', // exact misleading card type observed in the real Silo log
     title: 'Укрытие',
     original_title: 'Silo'
   };
@@ -48,6 +49,7 @@ test('LIVE regression: Silo E01 is not overwritten by E10 and TorrServer resumes
     Lampa.Storage.set('lampac_resume_v1', { version: 1, items: {}, hash_map: {} });
     Lampa.Storage.set('lampac_profile_id', 'default');
     Lampa.Storage.set('activity', { movie: card });
+    // Reproduce the malformed value from the real log: hostname/path without a scheme.
     Lampa.Storage.set('torrserver_url', hostWithoutScheme + '/ts');
     window.__resumePlayCalls = [];
     window.__resumePlaylistCalls = [];
@@ -58,6 +60,7 @@ test('LIVE regression: Silo E01 is not overwritten by E10 and TorrServer resumes
         season: Number(data && data.season || 0),
         episode: Number(data && data.episode || 0),
         torrent_hash: data && data.torrent_hash,
+        file_index: Number(data && data.file_index || 0),
         timeline: data && data.timeline ? {
           hash: data.timeline.hash,
           time: Number(data.timeline.time || 0),
@@ -74,9 +77,7 @@ test('LIVE regression: Silo E01 is not overwritten by E10 and TorrServer resumes
   }, { card, hostWithoutScheme });
 
   await page.addScriptTag({ content: pluginSource() });
-  await page.waitForFunction(() => Lampa.LampacResume && Lampa.LampacResume.version === '0.2.2');
-  await page.addScriptTag({ content: hotfixSource() });
-  await page.waitForFunction(() => window.lampac_resume_hotfix_version === '0.2.3');
+  await page.waitForFunction(() => Lampa.LampacResume && Lampa.LampacResume.version === '0.2.3');
 
   const captured = await page.evaluate(({ e01, e10, hash }) => {
     const p1 = {
@@ -93,11 +94,13 @@ test('LIVE regression: Silo E01 is not overwritten by E10 and TorrServer resumes
     Lampa.Player.playlist([p1, p10]);
     return {
       records: Lampa.LampacResume.list(),
-      torrserverUrl: Lampa.Storage.get('torrserver_url', '')
+      torrserverUrl: Lampa.Storage.get('torrserver_url', ''),
+      torserverApi: Lampa.LampacResume.debug().torrserver_api
     };
   }, { e01, e10, hash });
 
   expect(captured.torrserverUrl).toBe(backend + '/ts');
+  expect(captured.torserverApi).toBe(true);
   expect(captured.records.length).toBeGreaterThanOrEqual(2);
 
   const e01Record = captured.records.find((r) => r.media && r.media.season === 3 && r.media.episode === 1);
@@ -111,6 +114,7 @@ test('LIVE regression: Silo E01 is not overwritten by E10 and TorrServer resumes
   expect(e10Record.key).toContain(':s3:e10');
   expect(Number(e01Record.source.file_index)).toBe(1);
   expect(Number(e10Record.source.file_index)).toBe(10);
+  expect(e01Record.source.torrserver_base).toBe(backend + '/ts');
 
   const key = e01Record.key;
   await page.evaluate((key) => {
@@ -125,7 +129,7 @@ test('LIVE regression: Silo E01 is not overwritten by E10 and TorrServer resumes
   const pulled = await page.evaluate((key) => new Promise((resolve) => {
     Lampa.LampacResume.pullTorrServer(key, (seconds) => resolve(Number(seconds || 0)));
   }), key);
-  expect(pulled).toBe(65);
+  expect(pulled, `TorrServer browser roundtrip failed: ${JSON.stringify(tsTraffic)}`).toBe(65);
 
   await page.evaluate(() => { window.__resumePlayCalls = []; });
   await page.evaluate((key) => Lampa.LampacResume.resume(key), key);
@@ -137,6 +141,7 @@ test('LIVE regression: Silo E01 is not overwritten by E10 and TorrServer resumes
   expect(resumed.url).toContain('index=1');
   expect(resumed.url).not.toContain('index=10');
   expect(resumed.url).not.toContain('/lampa-main/');
+  expect(resumed.file_index).toBe(1);
   expect(resumed.season).toBe(3);
   expect(resumed.episode).toBe(1);
   expect(resumed.timeline.time).toBe(65);
