@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: lampa-full-stack-lab-bootstrap
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   bootstrap:
