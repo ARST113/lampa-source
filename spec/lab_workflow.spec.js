@@ -55,7 +55,7 @@ describe('GitHub Full Stack Lab control workflow', () => {
   it('preserves the public Codespace host when bootstrap retries start-lab over SSH', () => {
     const workflow = read('.github/workflows/lab-bootstrap.yml');
     expect(workflow).toContain(
-      'LAB_PUBLIC_HOST="${name}-9118.app.github.dev" bash .devcontainer/start-lab.sh',
+      'LAB_PUBLIC_HOST=${name}-9118.app.github.dev bash .devcontainer/start-lab.sh',
     );
   });
 
