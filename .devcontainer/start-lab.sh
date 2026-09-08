@@ -51,11 +51,13 @@ fi
 
 for i in $(seq 1 90); do
   if curl -fsS --max-time 5 'http://127.0.0.1:9118/version?type=hash' >/dev/null 2>&1; then
+    bash "$ROOT/.devcontainer/configure-torrserver.sh"
     exec bash "$ROOT/.devcontainer/smoke-lab.sh"
   fi
   sleep 2
 done
 
-echo 'Lampac did not become ready on port 9118' >&2
-docker compose -f "$COMPOSE" logs --tail=150 lampac >&2 || true
+echo 'Lampac did not become ready through gateway on port 9118' >&2
+docker compose -f "$COMPOSE" ps >&2 || true
+docker compose -f "$COMPOSE" logs --tail=150 gateway lampac torrserver >&2 || true
 exit 1
