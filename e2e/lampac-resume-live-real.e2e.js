@@ -1,16 +1,12 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
-const zlib = require('zlib');
 
 const backend = (process.env.LAMPA_TEST_LAMPAC_URL || '').replace(/\/+$/, '');
 const pages = (process.env.LAMPA_TEST_PAGES_URL || 'https://arst113.github.io/lampa-source/test/').replace(/\/+$/, '/');
 
 function pluginSource() {
-  const parts = [1, 2, 3, 4, 5].map((n) =>
-    fs.readFileSync(path.join(__dirname, '..', 'spike', `lampac-resume-fixture.part${n}`), 'utf8').trim()
-  ).join('');
-  return zlib.gunzipSync(Buffer.from(parts, 'base64')).toString('utf8');
+  return fs.readFileSync(path.join(__dirname, '..', 'plugins', 'watch_resume', 'watch_resume.js'), 'utf8');
 }
 
 function params(card) {
@@ -41,10 +37,12 @@ async function openLab(page) {
 
 async function installPlugin(page, card) {
   await page.evaluate(({ card }) => {
-    Lampa.Storage.set('lampac_resume_v1', { version: 1, items: {}, hash_map: {} });
+    Lampa.Storage.set('lampac_resume_v1', { version: 2, items: {}, hash_map: {} });
     Lampa.Storage.set('lampac_profile_id', 'resume-live-real');
     Lampa.Storage.set('activity', { movie: card });
     Lampa.Storage.set('player', 'inner');
+    window.lampac_resume_plugin_version = '';
+    if (Lampa.Player) delete Lampa.Player.__lampacResumePatched;
     window.__resumeRealPlayCalls = [];
     window.__resumeRealNoty = [];
     Lampa.Player.play = function (data) {
@@ -69,7 +67,7 @@ async function installPlugin(page, card) {
     if (Lampa.Noty) Lampa.Noty.show = function (text) { window.__resumeRealNoty.push(String(text)); };
   }, { card });
   await page.addScriptTag({ content: pluginSource() });
-  await page.waitForFunction(() => Lampa.LampacResume && Lampa.LampacResume.version === '0.2.2');
+  await page.waitForFunction(() => Lampa.LampacResume && Lampa.LampacResume.version === '0.2.3');
 }
 
 async function discoverProviders(request, card) {
@@ -78,7 +76,7 @@ async function discoverProviders(request, card) {
   if (!response.ok()) return { providers: [], diagnostic: `events HTTP ${response.status()}` };
   let body;
   try { body = await response.json(); } catch (_) { return { providers: [], diagnostic: 'events non-json' }; }
-  for (let i = 0; i < 20 && body && body.life && body.memkey && !(Array.isArray(body.online) && body.online.length); i++) {
+  for (let i = 0; i < 25 && body && body.life && body.memkey && !(Array.isArray(body.online) && body.online.length); i++) {
     await new Promise((r) => setTimeout(r, 1000));
     response = await request.get(backend + '/lifeevents?memkey=' + encodeURIComponent(body.memkey) + '&' + q.toString(), { timeout: 60_000 });
     if (!response.ok()) break;
@@ -120,7 +118,7 @@ async function tryProvider(page, card, provider) {
     window.__resumeRealPlayCalls = [];
     window.__resumeRealNoty = [];
     Lampa.Storage.set('lampac_resume_v1', {
-      version: 1,
+      version: 2,
       items: { [record.key]: record },
       hash_map: { [record.timeline_hash]: record.key },
     });
@@ -139,8 +137,8 @@ async function tryProvider(page, card, provider) {
 
 test.skip(!backend, 'LAMPA_TEST_LAMPAC_URL is required');
 
-test('LIVE: Lampac Resume reaches a real Online provider and resolves a fresh stream', async ({ page, request }) => {
-  test.setTimeout(180_000);
+test('LIVE v0.2.3: real Lampac provider resolves a fresh Online stream and restores 65s', async ({ page, request }) => {
+  test.setTimeout(210_000);
   const backendTraffic = [];
   const consoleLines = [];
   page.on('request', (req) => {
@@ -159,16 +157,21 @@ test('LIVE: Lampac Resume reaches a real Online provider and resolves a fresh st
   await installPlugin(page, cards[0]);
 
   const attempts = [];
+  const discoveries = [];
   let success = null;
   for (const card of cards) {
     const discovery = await discoverProviders(request, card);
-    console.log('[REAL providers]', card.title, discovery.providers.map((x) => x.name));
-    expect(discovery.providers.length, `No real Online providers discovered for ${card.title}: ${JSON.stringify(discovery.diagnostic).slice(0, 1000)}`).toBeGreaterThan(0);
+    discoveries.push({ card: card.title, providerCount: discovery.providers.length, diagnostic: discovery.diagnostic });
+    console.log('[REAL v0.2.3 providers]', card.title, discovery.providers.map((x) => x.name));
+    if (!discovery.providers.length) {
+      attempts.push({ card: card.title, provider: '', ok: false, noty: ['no providers discovered'] });
+      continue;
+    }
 
     for (const provider of discovery.providers.slice(0, 8)) {
       const result = await tryProvider(page, card, provider);
       attempts.push({ card: card.title, provider: provider.name, ok: result.ok, noty: result.noty || [] });
-      console.log('[REAL provider attempt]', card.title, provider.name, result.ok, result.noty || []);
+      console.log('[REAL v0.2.3 provider attempt]', card.title, provider.name, result.ok, result.noty || []);
       if (result.ok && result.play && /^https?:\/\//i.test(String(result.play.url || ''))) {
         success = { card, provider, result };
         break;
@@ -177,16 +180,18 @@ test('LIVE: Lampac Resume reaches a real Online provider and resolves a fresh st
     if (success) break;
   }
 
-  console.log('[REAL Lampac Resume result]', JSON.stringify({
+  console.log('[REAL Lampac Resume v0.2.3 result]', JSON.stringify({
     success: success && { card: success.card.title, provider: success.provider.name, play: success.result.play },
+    discoveries,
     attempts,
-    backendTraffic: backendTraffic.slice(-80),
-    consoleLines: consoleLines.slice(-80),
+    backendTraffic: backendTraffic.slice(-100),
+    consoleLines: consoleLines.slice(-100),
   }, null, 2));
 
-  expect(success, `No provider produced a fresh stream. Attempts: ${JSON.stringify(attempts).slice(0, 5000)}`).toBeTruthy();
+  expect(success, `No real provider produced a fresh stream. Discoveries: ${JSON.stringify(discoveries).slice(0, 6000)} Attempts: ${JSON.stringify(attempts).slice(0, 6000)}`).toBeTruthy();
+  expect(success.result.play.isonline).toBe(true);
   expect(success.result.play.timeline && Number(success.result.play.timeline.time)).toBe(65);
   expect(success.result.play.url).not.toContain('media.invalid');
   expect(backendTraffic.some((u) => u.includes('/lite/events') || u.includes('/lifeevents'))).toBeTruthy();
-  expect(backendTraffic.some((u) => u !== backend + '/lampainit.js' && !u.includes('/version'))).toBeTruthy();
+  expect(backendTraffic.some((u) => /\/lite\/(?!events)/.test(u))).toBeTruthy();
 });
