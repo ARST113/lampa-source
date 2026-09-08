@@ -13,7 +13,7 @@ services:
 
   torrserver:
     image: ghcr.io/yourok/torrserver@sha256:4bf54fbd0cc095cdca8d854f95afee4223072ab7fdf378d0da50e5bb86dd8e77
-    container_name: lampa-full-stack-torrserver
+    container_name: lampa-full-stack-torrserver-managed
     expose:
       - "8090"
     restart: unless-stopped
