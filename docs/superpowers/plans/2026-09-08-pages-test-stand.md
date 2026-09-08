@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the existing branch-backed GitHub Pages deployment. Playwright manages the legacy `npm start` process, verifies the generated `build/web` application in Chromium, and GitHub Actions copies only that successful build into `gh-pages/test/`. A post-deploy SHA marker verifies the real Pages publication.
 
-**Tech Stack:** Node.js 20, existing Gulp/Vitest stack, Playwright Test 1.63.0, GitHub Actions, GitHub Pages.
+**Tech Stack:** Node.js 20 for the Lampa build, existing Gulp/Vitest stack, Playwright Test 1.63.0, current Node 24-based GitHub Actions (`checkout@v7`, `setup-node@v7`, `upload-artifact@v7`), GitHub Pages.
 
 **Spec:** `docs/superpowers/specs/2026-09-08-pages-test-stand-design.md`
 
@@ -25,40 +25,44 @@
 **Files:**
 - Modify: `package.json`
 - Create: `playwright.config.js`
-- Create: `e2e/smoke.spec.js`
+- Create: `e2e/smoke.e2e.js`
 
 **Interfaces:**
 - Consumes: existing `npm start` command, BrowserSync at port 3000, generated `build/web/` files.
 - Produces: `npm run test:e2e`, `playwright-report/`, and `test-results/`.
 
-- [ ] **Step 1: Add a smoke test that describes the required browser behavior**
+- [x] **Step 1: Add a smoke test that describes the required browser behavior**
 
 ```js
 const { test, expect } = require('@playwright/test');
 
 test('serves the Lampa shell and core assets', async ({ page, request }) => {
   const response = await page.goto('/');
-  expect(response && response.ok()).toBeTruthy();
+  expect(response, 'index.html should return a response').not.toBeNull();
+  expect(response.ok(), 'index.html should return HTTP 2xx').toBeTruthy();
   await expect(page).toHaveTitle('Lampa');
   await expect(page.locator('#app')).toHaveCount(1);
 
   const app = await request.get('/app.js');
-  expect(app.ok()).toBeTruthy();
-  expect((await app.body()).length).toBeGreaterThan(1000);
+  expect(app.ok(), 'app.js should return HTTP 2xx').toBeTruthy();
+  expect((await app.body()).length, 'app.js should contain a built application').toBeGreaterThan(1000);
 
   const css = await request.get('/css/app.css');
-  expect(css.ok()).toBeTruthy();
-  expect((await css.body()).length).toBeGreaterThan(1000);
+  expect(css.ok(), 'app.css should return HTTP 2xx').toBeTruthy();
+  expect((await css.body()).length, 'app.css should contain compiled styles').toBeGreaterThan(1000);
 });
 ```
 
-- [ ] **Step 2: Configure Playwright to start the existing dev build and wait for `app.js`**
+- [x] **Step 2: Configure Playwright to start the existing dev build and wait for `app.js`**
+
+The E2E filename uses `*.e2e.js` rather than `*.spec.js`; this prevents Vitest 0.32 from auto-discovering the Playwright suite.
 
 ```js
 const { defineConfig } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: './e2e',
+  testMatch: '**/*.e2e.js',
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
   use: {
@@ -76,7 +80,7 @@ module.exports = defineConfig({
 });
 ```
 
-- [ ] **Step 3: Add Playwright 1.63.0 and the E2E script**
+- [x] **Step 3: Add Playwright 1.63.0 and the E2E script**
 
 ```json
 "scripts": {
@@ -93,18 +97,18 @@ module.exports = defineConfig({
 
 Keep all existing dependencies unchanged.
 
-- [ ] **Step 4: Verify in CI**
+- [x] **Step 4: Verify in CI**
 
 Run:
 
 ```bash
-npm install
+npm install --no-audit --no-fund
 npm test -- --run
 npx playwright install --with-deps chromium
 npm run test:e2e
 ```
 
-Expected: existing Vitest suite passes and the Playwright smoke test passes in Chromium.
+Verified result: 4 Vitest files / 54 tests pass; the Chromium smoke test passes.
 
 ---
 
@@ -117,7 +121,7 @@ Expected: existing Vitest suite passes and the Playwright smoke test passes in C
 - Consumes: `npm test -- --run`, `npm run test:e2e`, generated `build/web/`, existing remote `gh-pages` branch.
 - Produces: updated `gh-pages/test/`, Actions diagnostics artifacts, and the live Pages SHA verification.
 
-- [ ] **Step 1: Create a workflow that tests source branches without reacting to `gh-pages`**
+- [x] **Step 1: Create a workflow that tests source branches without reacting to `gh-pages`**
 
 ```yaml
 on:
@@ -132,12 +136,12 @@ on:
   workflow_dispatch:
 ```
 
-Use Node 20, `npm install`, `npm test -- --run`, `npx playwright install --with-deps chromium`, and `npm run test:e2e`.
+Use Node 20 for the Lampa build, `npm install --no-audit --no-fund`, `npm test -- --run`, `npx playwright install --with-deps chromium`, and `npm run test:e2e`. GitHub Actions themselves use the current v7 generation.
 
-- [ ] **Step 2: Upload browser diagnostics even on failures**
+- [x] **Step 2: Upload browser diagnostics even on failures**
 
 ```yaml
-- uses: actions/upload-artifact@v4
+- uses: actions/upload-artifact@v7
   if: always()
   with:
     name: playwright-report-${{ github.run_id }}
@@ -147,14 +151,14 @@ Use Node 20, `npm install`, `npm test -- --run`, `npx playwright install --with-
     if-no-files-found: ignore
 ```
 
-- [ ] **Step 3: Publish only successful push/manual builds**
+- [x] **Step 3: Publish only successful push/manual builds**
 
 Fetch `gh-pages`, create a worktree for it, remove only `/test`, copy `build/web/` into `/test`, convert the test-only YouTube iframe API URL to HTTPS, write a non-secret `build.json`, commit, and push `gh-pages`.
 
 Core shell logic:
 
 ```bash
-git fetch origin gh-pages:gh-pages
+git fetch origin gh-pages:refs/heads/gh-pages
 rm -rf /tmp/lampa-pages
 git worktree add /tmp/lampa-pages gh-pages
 rm -rf /tmp/lampa-pages/test
@@ -163,9 +167,9 @@ cp -a build/web/. /tmp/lampa-pages/test/
 sed -i 's#http://www.youtube.com/iframe_api#https://www.youtube.com/iframe_api#g' /tmp/lampa-pages/test/index.html
 ```
 
-The commit must stage only `test/` plus `.nojekyll`, so `plugins/` remains unchanged.
+The commit stages only `test/` plus `.nojekyll`, so `plugins/` remains unchanged.
 
-- [ ] **Step 4: Verify the real Pages deployment by source SHA**
+- [x] **Step 4: Verify the real Pages deployment by source SHA**
 
 Poll:
 
@@ -175,9 +179,9 @@ https://arst113.github.io/lampa-source/test/build.json
 
 with a cache-busting query string until its `sha` equals `${GITHUB_SHA}`. Fail after a bounded timeout if Pages continues to serve a stale revision.
 
-- [ ] **Step 5: Verify workflow behavior**
+- [x] **Step 5: Verify workflow behavior**
 
-Expected on the feature branch: unit tests pass, Playwright passes, `gh-pages/test/` is updated, `gh-pages/plugins/` remains unchanged, and the post-deploy check sees the new SHA.
+Verified on the feature branch: unit tests pass, Playwright passes, `gh-pages/test/` is updated, the `gh-pages/plugins/` tree SHA remains unchanged, and the post-deploy check sees the source SHA.
 
 ---
 
@@ -190,19 +194,17 @@ Expected on the feature branch: unit tests pass, Playwright passes, `gh-pages/te
 - Consumes: successful Actions run and deployed `/test/build.json`.
 - Produces: a pull request into `main` with test evidence.
 
-- [ ] **Step 1: Compare feature branch to `main` and confirm scope**
+- [x] **Step 1: Compare feature branch to `main` and confirm scope**
 
-Expected changed files are limited to the design/plan documentation, `package.json`, Playwright configuration/tests, and the new workflow.
+Changed files are limited to the design/plan documentation, `package.json`, Playwright configuration/test, and the new workflow. No Lampa runtime source file is modified.
 
-- [ ] **Step 2: Confirm the live test URL**
-
-Open or fetch:
+- [x] **Step 2: Confirm the live test publication**
 
 ```text
 https://arst113.github.io/lampa-source/test/
 ```
 
-Expected: HTTP 200 and `build.json` points to the tested feature-branch SHA.
+The workflow's post-deploy HTTP check confirms the live `build.json` serves the exact tested source SHA.
 
 - [ ] **Step 3: Open a PR into `main`**
 
