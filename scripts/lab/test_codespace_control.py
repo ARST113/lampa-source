@@ -7,6 +7,7 @@ from scripts.lab.codespace_control import (
     ensure_decision,
     pages_url,
     redact,
+    remote_ssh_args,
     select_codespace,
 )
 
@@ -54,6 +55,13 @@ class ControlTests(unittest.TestCase):
 
     def test_redacts_token(self):
         self.assertEqual(redact('token=abc123 and abc123 again', ['abc123']), 'token=*** and *** again')
+
+    def test_remote_ssh_passes_command_as_single_remote_argument(self):
+        self.assertEqual(
+            remote_ssh_args('silver-space', 'docker ps -a'),
+            ['gh', 'codespace', 'ssh', '-c', 'silver-space', 'docker ps -a'],
+        )
+        self.assertNotIn('--', remote_ssh_args('silver-space', 'docker ps -a'))
 
     def test_client_lists_authenticated_user_codespaces(self):
         transport = FakeTransport([{'codespaces': []}])
