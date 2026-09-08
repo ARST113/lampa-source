@@ -67,6 +67,7 @@ jobs:
           test -f build/web/index.html
           test -f build/web/app.js
           test -f build/web/css/app.css
+          test -f test-stand/profile.js
 
           git fetch origin gh-pages:refs/heads/gh-pages
           rm -rf /tmp/lampa-pages
@@ -75,8 +76,27 @@ jobs:
           rm -rf /tmp/lampa-pages/test
           mkdir -p /tmp/lampa-pages/test
           cp -a build/web/. /tmp/lampa-pages/test/
+          cp test-stand/profile.js /tmp/lampa-pages/test/test-profile.js
 
           sed -i 's#http://www.youtube.com/iframe_api#https://www.youtube.com/iframe_api#g' /tmp/lampa-pages/test/index.html
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('/tmp/lampa-pages/test/index.html')
+          html = path.read_text(encoding='utf-8')
+          marker = '<script src="app.js"></script>'
+          profile = '<script src="./test-profile.js"></script>\n    ' + marker
+
+          if './test-profile.js' not in html:
+              if marker not in html:
+                  raise SystemExit('app.js script marker not found in test index.html')
+              html = html.replace(marker, profile, 1)
+              path.write_text(html, encoding='utf-8')
+          PY
+
+          grep -Fq './test-profile.js' /tmp/lampa-pages/test/index.html
+          test -f /tmp/lampa-pages/test/test-profile.js
           touch /tmp/lampa-pages/.nojekyll
 
           python3 - <<'PY'
@@ -92,6 +112,7 @@ jobs:
               'run_id': os.environ['GITHUB_RUN_ID'],
               'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
               'published_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'profile': 'full-experimental',
           }
 
           Path('/tmp/lampa-pages/test/build.json').write_text(
@@ -114,12 +135,14 @@ jobs:
           set -euo pipefail
 
           url='https://arst113.github.io/lampa-source/test/build.json'
+          profile_url='https://arst113.github.io/lampa-source/test/test-profile.js'
 
           for i in $(seq 1 60); do
             body="$(curl -fsSL --connect-timeout 10 --max-time 20 "${url}?run=${GITHUB_RUN_ID}&attempt=${GITHUB_RUN_ATTEMPT}&check=${i}" 2>/dev/null || true)"
 
             if printf '%s' "$body" | grep -Fq "\"sha\": \"${GITHUB_SHA}\""; then
-              echo "GitHub Pages is serving ${GITHUB_SHA}"
+              curl -fsSL --connect-timeout 10 --max-time 20 "${profile_url}?run=${GITHUB_RUN_ID}" | grep -Fq '__LAMPA_TEST_PROFILE__'
+              echo "GitHub Pages is serving ${GITHUB_SHA} with full experimental profile"
               exit 0
             fi
 
