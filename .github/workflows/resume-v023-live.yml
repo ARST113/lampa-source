@@ -1,0 +1,126 @@
+name: Lampac Resume v0.2.3 Live
+
+on:
+  push:
+    branches:
+      - feat/lampac-resume-v023-impl
+    paths:
+      - 'spike/resume-v023.RUN'
+
+permissions:
+  contents: write
+
+jobs:
+  torrent-live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      LAB_CODESPACE: lampa-full-stack-lab-r54vrp44jj4cx796
+      BACKEND: https://lampa-full-stack-lab-r54vrp44jj4cx796-9118.app.github.dev
+      FIX_REF: feat/torrserver-tracktimecode-lab
+      STABLE_REF: feat/github-full-stack-lab
+      LAMPA_TEST_LAMPAC_URL: https://lampa-full-stack-lab-r54vrp44jj4cx796-9118.app.github.dev
+      LAMPA_TEST_PAGES_URL: https://arst113.github.io/lampa-source/test/
+
+    steps:
+      - name: Checkout Resume v0.2.3
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Build standalone Resume v0.2.3 plugin
+        run: bash scripts/lab/build-watch-resume-v023.sh
+
+      - name: Run core Silo regression before browser
+        run: |
+          node - <<'NODE'
+          const core = require('./plugins/watch_resume/watch_resume.js');
+          const card = {id:125988, source:'cub', type:'movie', title:'Укрытие'};
+          const e1 = core.createMedia(card, {season:3, episode:1, title:'Кто ты?'});
+          const e10 = core.createMedia(card, {url:'https://example.invalid/ts/stream/Silo.S03E10.mkv?link=5980c336abd6e498afa5b5461b5af4be52039e63&index=10&play'});
+          if (e1.type !== 'tv' || e1.season !== 3 || e1.episode !== 1) throw new Error(JSON.stringify(e1));
+          if (e10.type !== 'tv' || e10.season !== 3 || e10.episode !== 10) throw new Error(JSON.stringify(e10));
+          if (core.buildMediaKey(e1) === core.buildMediaKey(e10)) throw new Error('episode keys collided');
+          console.log('CORE_SILO_REGRESSION_OK', core.buildMediaKey(e1), core.buildMediaKey(e10));
+          NODE
+
+      - name: Deploy current TorrServer gateway to real Codespace
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACES_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="${LAB_CODESPACE}-9118.app.github.dev"
+          gh codespace ssh -c "$LAB_CODESPACE" -- "cd /workspaces/lampa-source && git fetch origin $FIX_REF && git reset --hard FETCH_HEAD && LAB_PUBLIC_HOST=$host bash .devcontainer/start-lab.sh"
+
+      - name: Verify full public TorrServer contract used by Lampa
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "$BACKEND/ts/echo" | tee /tmp/ts-echo
+          grep -Fq 'MatriX.144.1' /tmp/ts-echo
+
+          curl -fsS -H 'Content-Type: application/json' -d '{"action":"get"}' "$BACKEND/ts/settings" | tee /tmp/ts-settings
+          grep -Fq '"TrackTimecode":true' /tmp/ts-settings
+
+          curl -fsS -H 'Content-Type: application/json' -d '{"action":"list"}' "$BACKEND/ts/torrents" | tee /tmp/ts-torrents
+          echo 'TORRENTS_LIST_OK'
+
+          hash='2123456789abcdef0123456789abcdef01234567'
+          curl -fsS -H 'Content-Type: application/json' -d "{\"action\":\"rem\",\"hash\":\"$hash\",\"file_index\":1}" "$BACKEND/ts/viewed" >/dev/null || true
+          curl -fsS -H 'Content-Type: application/json' -d "{\"action\":\"set\",\"hash\":\"$hash\",\"file_index\":1,\"timecode\":65}" "$BACKEND/ts/viewed" >/dev/null
+          curl -fsS -H 'Content-Type: application/json' -d "{\"action\":\"list\",\"hash\":\"$hash\"}" "$BACKEND/ts/viewed" | tee /tmp/ts-viewed
+          grep -Fq '"timecode":65' /tmp/ts-viewed
+          echo 'PUBLIC_TRACK_TIMECODE_ROUNDTRIP_OK'
+
+          gst_code="$(curl -sS -o /tmp/ts-gst -w '%{http_code}' "$BACKEND/ts/gst/echo" || true)"
+          echo "GST_PROBE_HTTP=$gst_code (404 is acceptable: Lampa then uses native TorrServer stream)"
+
+      - name: Install browser dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run real Silo E01 to E01 resume regression
+        run: npx playwright test --config=spike/playwright.resume.v023.torrent.config.js --workers=1
+
+      - name: Commit tested standalone plugin
+        if: success()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add plugins/watch_resume/watch_resume.js
+          if git diff --cached --quiet; then
+            echo 'Generated plugin already committed.'
+          else
+            git commit -m 'feat: materialize tested Lampac Resume v0.2.3'
+            git push origin HEAD:feat/lampac-resume-v023-impl
+          fi
+
+      - name: Restore stable Full Stack Lab
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACES_PAT }}
+        shell: bash
+        run: |
+          host="${LAB_CODESPACE}-9118.app.github.dev"
+          gh codespace ssh -c "$LAB_CODESPACE" -- "cd /workspaces/lampa-source && git fetch origin $STABLE_REF && git reset --hard FETCH_HEAD && LAB_PUBLIC_HOST=$host bash .devcontainer/start-lab.sh"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lampac-resume-v023-${{ github.run_id }}
+          path: |
+            plugins/watch_resume/watch_resume.js
+            playwright-report-resume-v023-torrent/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
