@@ -29,7 +29,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh codespace ssh -c "$LAB_CODESPACE" -- 'set -euo pipefail; docker rm -f lampa-full-stack-torrserver >/dev/null 2>&1 || true; docker pull ghcr.io/yourok/torrserver:latest; docker run -d --name lampa-full-stack-torrserver --restart unless-stopped -p 8090:8090 ghcr.io/yourok/torrserver:latest; for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8090/echo && break; sleep 1; done; echo; hash=0123456789abcdef0123456789abcdef01234567; echo === viewed-set ===; curl -fsS -H "Content-Type: application/json" -d "{\"action\":\"set\",\"hash\":\"$hash\",\"file_index\":1,\"timecode\":65}" http://127.0.0.1:8090/viewed; echo; echo === viewed-list ===; curl -fsS -H "Content-Type: application/json" -d "{\"action\":\"list\",\"hash\":\"$hash\",\"file_index\":1}" http://127.0.0.1:8090/viewed; echo'
+          gh codespace ssh -c "$LAB_CODESPACE" -- 'set -euo pipefail; \
+            docker rm -f lampa-full-stack-torrserver >/dev/null 2>&1 || true; \
+            docker pull ghcr.io/yourok/torrserver:latest; \
+            docker run -d --name lampa-full-stack-torrserver --restart unless-stopped -p 8090:8090 ghcr.io/yourok/torrserver:latest; \
+            for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8090/echo && break; sleep 1; done; \
+            echo; \
+            settings=$(curl -fsS -H "Content-Type: application/json" -d "{\"action\":\"get\"}" http://127.0.0.1:8090/settings); \
+            echo "=== TrackTimecode before ==="; printf "%s\n" "$settings" | python3 -c "import json,sys; print(json.load(sys.stdin).get(\"TrackTimecode\"))"; \
+            enabled=$(SETTINGS="$settings" python3 -c "import json,os; x=json.loads(os.environ[\"SETTINGS\"]); x[\"TrackTimecode\"]=True; print(json.dumps(x,separators=(\",\",\":\")))"); \
+            payload=$(SETS="$enabled" python3 -c "import json,os; print(json.dumps({\"action\":\"set\",\"sets\":json.loads(os.environ[\"SETS\"])}))"); \
+            curl -fsS -H "Content-Type: application/json" -d "$payload" http://127.0.0.1:8090/settings >/dev/null; \
+            sleep 2; \
+            settings2=$(curl -fsS -H "Content-Type: application/json" -d "{\"action\":\"get\"}" http://127.0.0.1:8090/settings); \
+            echo "=== TrackTimecode after ==="; printf "%s\n" "$settings2" | python3 -c "import json,sys; print(json.load(sys.stdin).get(\"TrackTimecode\"))"; \
+            hash=0123456789abcdef0123456789abcdef01234567; \
+            echo "=== viewed-set ==="; \
+            curl -fsS -H "Content-Type: application/json" -d "{\"action\":\"set\",\"hash\":\"$hash\",\"file_index\":1,\"timecode\":65}" http://127.0.0.1:8090/viewed; \
+            echo; echo "=== viewed-list ==="; \
+            curl -fsS -H "Content-Type: application/json" -d "{\"action\":\"list\",\"hash\":\"$hash\",\"file_index\":1}" http://127.0.0.1:8090/viewed; \
+            echo'
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
