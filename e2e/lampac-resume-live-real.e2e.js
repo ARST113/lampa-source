@@ -48,20 +48,21 @@ async function installPlugin(page, card) {
     window.__resumeRealPlayCalls = [];
     window.__resumeRealNoty = [];
     Lampa.Player.play = function (data) {
-      window.__resumeRealPlayCalls.push({
+      const safe = {
         title: data && data.title,
-        url: String(data && data.url || ''),
+        url: data && data.url ? String(data.url) : '',
         season: Number(data && data.season || 0),
         episode: Number(data && data.episode || 0),
-        voice_name: String(data && data.voice_name || ''),
+        voice_name: data && data.voice_name || '',
         isonline: !!(data && data.isonline),
         timeline: data && data.timeline ? {
           hash: data.timeline.hash,
           time: Number(data.timeline.time || 0),
           duration: Number(data.timeline.duration || 0),
-          percent: Number(data.timeline.percent || 0)
-        } : null
-      });
+          percent: Number(data.timeline.percent || 0),
+        } : null,
+      };
+      window.__resumeRealPlayCalls.push(safe);
       return data;
     };
     Lampa.Player.playlist = function (items) { return items; };
@@ -166,7 +167,7 @@ test('LIVE: Lampac Resume reaches a real Online provider and resolves a fresh st
 
     for (const provider of discovery.providers.slice(0, 8)) {
       const result = await tryProvider(page, card, provider);
-      attempts.push({ card: card.title, provider: provider.name, result });
+      attempts.push({ card: card.title, provider: provider.name, ok: result.ok, noty: result.noty || [] });
       console.log('[REAL provider attempt]', card.title, provider.name, result.ok, result.noty || []);
       if (result.ok && result.play && /^https?:\/\//i.test(String(result.play.url || ''))) {
         success = { card, provider, result };
