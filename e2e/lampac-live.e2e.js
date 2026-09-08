@@ -7,9 +7,19 @@ test.skip(!backend, 'LAMPA_TEST_LAMPAC_URL is required for the live Lampac suite
 
 test('real Codespace Lampac owns Online, TMDB, parser and TorrServer', async ({ page, request }) => {
   const pageErrors = [];
+  const consoleErrors = [];
+  const requestFailures = [];
   const failedBackendResponses = [];
 
   page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error' || message.type() === 'warning') {
+      consoleErrors.push(`${message.type()}: ${message.text()}`);
+    }
+  });
+  page.on('requestfailed', (request) => {
+    requestFailures.push(`${request.url()} :: ${(request.failure() || {}).errorText || 'failed'}`);
+  });
   page.on('response', (response) => {
     if (response.url().startsWith(backend) && response.status() >= 400) {
       failedBackendResponses.push(`${response.status()} ${response.url()}`);
@@ -47,6 +57,30 @@ test('real Codespace Lampac owns Online, TMDB, parser and TorrServer', async ({ 
   const target = pages + '?lampac=' + encodeURIComponent(backend);
   const response = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   expect(response && response.ok(), `Pages returned ${response && response.status()}`).toBeTruthy();
+
+  await page.waitForTimeout(5_000);
+  const startupDiagnostic = await page.evaluate(() => ({
+    readyState: document.readyState,
+    appready: window.appready,
+    preparedApp: window.prepared_app,
+    firstLoad: window.fitst_load,
+    appTimeLaunch: window.app_time_launch,
+    hasLampa: typeof window.Lampa !== 'undefined',
+    profile: window.__LAMPA_TEST_PROFILE__ ? {
+      mode: window.__LAMPA_TEST_PROFILE__.mode,
+      backend: window.__LAMPA_TEST_PROFILE__.backend,
+      lampacInit: window.__LAMPA_TEST_PROFILE__.lampacInit,
+    } : null,
+    loadingStatus: document.querySelector('.lp-status') ? document.querySelector('.lp-status').textContent : null,
+    loadingStep: document.querySelector('.lp-step') ? document.querySelector('.lp-step').textContent : null,
+    scripts: Array.from(document.scripts).map((script) => script.src || '<inline>'),
+  }));
+  console.log('[live startup diagnostic]', JSON.stringify({
+    startupDiagnostic,
+    pageErrors,
+    consoleErrors,
+    requestFailures,
+  }, null, 2));
 
   await page.waitForFunction(() => window.appready === true, null, { timeout: 60_000 });
   await page.waitForFunction(() => (
