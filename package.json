@@ -7,11 +7,13 @@
     "start": "gulp",
     "debug": "gulp debug",
     "test": "vitest",
+    "test:e2e": "playwright test",
     "doc": "gulp doc"
   },
   "author": "unk",
   "license": "ISC",
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@rollup/plugin-node-resolve": "^13.0.5",
     "autoprefixer": "^10.4.0",
     "caniuse-lite": "^1.0.30001275",
