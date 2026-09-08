@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE="$ROOT/.devcontainer/lab.compose.yml"
 RUNTIME_CONF="${LAB_INIT_CONF:-/tmp/lampa-full-stack-lab.init.conf}"
 
-python3 "$ROOT/.devcontainer/render-lab-init.py" \
+bash "$ROOT/.devcontainer/render-lab-init.sh" \
   --input "$ROOT/.devcontainer/lab.init.conf" \
   --output "$RUNTIME_CONF"
 export LAB_INIT_CONF="$RUNTIME_CONF"
