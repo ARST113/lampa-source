@@ -26,6 +26,12 @@ describe('Codespaces full-stack lab runtime', () => {
     expect(compose).not.toContain('lampac-lab-cache');
   });
 
+  it('runs smoke checks through bash so git-reset file modes cannot break startup', () => {
+    const start = read('.devcontainer/start-lab.sh');
+    expect(start).toContain('exec bash "$ROOT/.devcontainer/smoke-lab.sh"');
+    expect(start).not.toContain('exec "$ROOT/.devcontainer/smoke-lab.sh"');
+  });
+
   it('enables the required Lampac modules without access DB or WAF', () => {
     const conf = read('.devcontainer/lab.init.conf');
     for (const key of ['"jacred": true', '"tmdbProxy": true', '"online": true', '"torrserver": true']) {
