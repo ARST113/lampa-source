@@ -9,4 +9,4 @@ services:
     shm_size: 1024mb
     restart: unless-stopped
     volumes:
-      - ./lab.init.conf:/lampac/init.conf:ro
+      - "${LAB_INIT_CONF:-./lab.init.conf}:/lampac/init.conf:ro"
