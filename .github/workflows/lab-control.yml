@@ -85,6 +85,44 @@ jobs:
           LAB_CODESPACE_REF: feat/github-full-stack-lab
         run: python3 scripts/lab/codespace_control.py "${{ steps.route.outputs.action }}"
 
+      - name: Set up Node.js for full browser test
+        if: ${{ steps.route.outputs.run == 'true' && steps.route.outputs.action == 'full' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Install browser test dependencies
+        if: ${{ steps.route.outputs.run == 'true' && steps.route.outputs.action == 'full' }}
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright Chromium for full test
+        if: ${{ steps.route.outputs.run == 'true' && steps.route.outputs.action == 'full' }}
+        run: npx playwright install --with-deps chromium
+
+      - name: Prepare live Lampac backend URL
+        if: ${{ steps.route.outputs.run == 'true' && steps.route.outputs.action == 'full' }}
+        shell: bash
+        run: |
+          backend="$(python3 -c "import json; print(json.load(open('lab-artifacts/status.json'))['backend'])")"
+          test -n "$backend"
+          echo "LAMPA_TEST_LAMPAC_URL=$backend" >> "$GITHUB_ENV"
+          echo "LAMPA_TEST_PAGES_URL=https://arst113.github.io/lampa-source/test/" >> "$GITHUB_ENV"
+
+      - name: Run live Lampac browser test
+        if: ${{ steps.route.outputs.run == 'true' && steps.route.outputs.action == 'full' }}
+        run: bash scripts/lab/run-with-heartbeat.sh npm run test:e2e:backend
+
+      - name: Upload live browser diagnostics
+        if: always() && steps.route.outputs.run == 'true' && steps.route.outputs.action == 'full'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-playwright-${{ github.run_id }}
+          path: |
+            playwright-report-live/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload lab diagnostics
         if: always() && steps.route.outputs.run == 'true'
         uses: actions/upload-artifact@v7
