@@ -3,6 +3,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE="$ROOT/.devcontainer/lab.compose.yml"
+RUNTIME_CONF="${LAB_INIT_CONF:-/tmp/lampa-full-stack-lab.init.conf}"
+
+python3 "$ROOT/.devcontainer/render-lab-init.py" \
+  --input "$ROOT/.devcontainer/lab.init.conf" \
+  --output "$RUNTIME_CONF"
+export LAB_INIT_CONF="$RUNTIME_CONF"
 
 docker compose -f "$COMPOSE" up -d --remove-orphans
 
