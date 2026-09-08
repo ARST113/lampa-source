@@ -1,0 +1,58 @@
+name: Lampac Resume v0.2.3 Online Live
+
+on:
+  push:
+    branches:
+      - feat/lampac-resume-v023-impl
+    paths:
+      - 'spike/resume-v023-online.RUN'
+
+permissions:
+  contents: read
+
+jobs:
+  online-live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      LAMPA_TEST_LAMPAC_URL: https://lampa-full-stack-lab-r54vrp44jj4cx796-9118.app.github.dev
+      LAMPA_TEST_PAGES_URL: https://arst113.github.io/lampa-source/test/
+
+    steps:
+      - name: Checkout Resume v0.2.3
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Build standalone Resume v0.2.3 plugin
+        run: bash scripts/lab/build-watch-resume-v023.sh
+
+      - name: Verify stable Lampac backend is live
+        run: |
+          set -euo pipefail
+          curl -fsS "$LAMPA_TEST_LAMPAC_URL/version?type=hash"
+          curl -fsS "$LAMPA_TEST_LAMPAC_URL/lampainit.js" | grep -Eq 'online\.js|Lampac'
+
+      - name: Install browser dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run real Online provider resume gate
+        run: npx playwright test --config=spike/playwright.resume.v023.online.config.js --workers=1
+
+      - name: Upload Online diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lampac-resume-v023-online-${{ github.run_id }}
+          path: |
+            plugins/watch_resume/watch_resume.js
+            playwright-report-resume-v023-online/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
