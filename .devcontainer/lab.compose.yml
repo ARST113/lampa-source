@@ -10,9 +10,3 @@ services:
     restart: unless-stopped
     volumes:
       - ./lab.init.conf:/lampac/init.conf:ro
-      - lampac-lab-data:/lampac/data
-      - lampac-lab-cache:/lampac/cache
-
-volumes:
-  lampac-lab-data:
-  lampac-lab-cache:
