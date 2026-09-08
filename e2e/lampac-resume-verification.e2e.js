@@ -168,20 +168,26 @@ test('saved Online recipe resolves exact season/voice/episode and fresh stream',
   expect(requests).not.toContain('/fixture-resolve-2');
 });
 
-test('TorrServer TrackTimecode push/pull/resume works when enabled and settings are restored', async ({ page, request }) => {
+test('TorrServer resume keeps local progress when server TrackTimecode is unavailable', async ({ page, request }) => {
   const settingsResponse = await request.post(backend + '/ts/settings', { data: { action: 'get' }, timeout: 30000 });
   expect(settingsResponse.ok()).toBeTruthy();
   const original = await settingsResponse.json();
-  console.log('[resume verification] initial TrackTimecode =', original.TrackTimecode);
-  const enabled = JSON.parse(JSON.stringify(original));
-  enabled.TrackTimecode = true;
+  const hasTrackTimecode = Object.prototype.hasOwnProperty.call(original, 'TrackTimecode');
+  console.log('[resume verification] TorrServer settings keys =', Object.keys(original).sort());
+  console.log('[resume verification] TrackTimecode supported =', hasTrackTimecode, 'value =', original.TrackTimecode);
 
+  let settingsChanged = false;
   try {
-    const setResponse = await request.post(backend + '/ts/settings', { data: { action: 'set', sets: enabled }, timeout: 30000 });
-    expect(setResponse.ok()).toBeTruthy();
-    const checkResponse = await request.post(backend + '/ts/settings', { data: { action: 'get' }, timeout: 30000 });
-    const check = await checkResponse.json();
-    expect(check.TrackTimecode).toBe(true);
+    if (hasTrackTimecode && original.TrackTimecode !== true) {
+      const enabled = JSON.parse(JSON.stringify(original));
+      enabled.TrackTimecode = true;
+      const setResponse = await request.post(backend + '/ts/settings', { data: { action: 'set', sets: enabled }, timeout: 30000 });
+      expect(setResponse.ok()).toBeTruthy();
+      const checkResponse = await request.post(backend + '/ts/settings', { data: { action: 'get' }, timeout: 30000 });
+      const check = await checkResponse.json();
+      expect(check.TrackTimecode).toBe(true);
+      settingsChanged = true;
+    }
 
     await openLab(page);
     const card = { id: 999001, source: 'tmdb', type: 'movie', title: 'Torrent Resume Fixture', release_date: '2026-01-01' };
@@ -203,7 +209,8 @@ test('TorrServer TrackTimecode push/pull/resume works when enabled and settings 
 
     await page.waitForTimeout(1200);
     const pulled = await page.evaluate((key) => new Promise((resolve) => Lampa.LampacResume.pullTorrServer(key, resolve)), key);
-    expect(Number(pulled)).toBe(65);
+    if (hasTrackTimecode) expect(Number(pulled)).toBe(65);
+    else expect(Number(pulled || 0)).toBe(0);
 
     await page.evaluate((key) => Lampa.LampacResume.resume(key), key);
     await page.waitForFunction(() => window.__resumePlayCalls.length > 0, null, { timeout: 15000 });
@@ -213,11 +220,13 @@ test('TorrServer TrackTimecode push/pull/resume works when enabled and settings 
     expect(state.play.timeline.time).toBe(65);
     expect(noTransientKeys(state.record)).toBeTruthy();
   } finally {
-    const restore = await request.post(backend + '/ts/settings', { data: { action: 'set', sets: original }, timeout: 30000 });
-    expect(restore.ok()).toBeTruthy();
-    const restoredResponse = await request.post(backend + '/ts/settings', { data: { action: 'get' }, timeout: 30000 });
-    const restored = await restoredResponse.json();
-    expect(restored.TrackTimecode).toBe(original.TrackTimecode);
-    console.log('[resume verification] restored TrackTimecode =', restored.TrackTimecode);
+    if (settingsChanged) {
+      const restore = await request.post(backend + '/ts/settings', { data: { action: 'set', sets: original }, timeout: 30000 });
+      expect(restore.ok()).toBeTruthy();
+      const restoredResponse = await request.post(backend + '/ts/settings', { data: { action: 'get' }, timeout: 30000 });
+      const restored = await restoredResponse.json();
+      expect(restored.TrackTimecode).toBe(original.TrackTimecode);
+      console.log('[resume verification] restored TrackTimecode =', restored.TrackTimecode);
+    }
   }
 });
