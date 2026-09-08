@@ -1,9 +1,9 @@
 {
   "repository": "ARST113/lampa-source",
-  "ref": "feat/github-full-stack-lab",
+  "ref": "test/lampac-resume-e2e-20260908",
   "sha": "7433ffa462577db6c8d436ee462789a7d8a0983d",
-  "run_id": "34236430613",
+  "run_id": "34241689378",
   "run_attempt": "1",
-  "published_at": "2026-09-08T14:11:09.474003+00:00",
+  "published_at": "2026-09-08T14:59:39.133539+00:00",
   "profile": "full-experimental"
 }
