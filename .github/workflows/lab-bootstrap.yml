@@ -8,6 +8,11 @@ on:
       - '.github/workflows/lab-bootstrap.yml'
       - '.devcontainer/**'
       - 'scripts/lab/codespace_control.py'
+      - 'scripts/lab/run-with-heartbeat.sh'
+      - 'test-stand/profile.js'
+      - 'e2e/lampac-live.e2e.js'
+      - 'playwright.live.config.js'
+      - 'package.json'
 
 permissions:
   contents: read
@@ -19,7 +24,7 @@ concurrency:
 jobs:
   bootstrap:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
       - name: Checkout source
@@ -97,7 +102,6 @@ jobs:
           } | tee lab-artifacts/remote-diagnostics.txt
 
       - name: Verify public health after diagnostics
-        if: always()
         env:
           CODESPACES_PAT: ${{ secrets.CODESPACES_PAT }}
           LAB_CODESPACE_REF: feat/github-full-stack-lab
@@ -106,6 +110,56 @@ jobs:
       - name: Report initial ensure failure
         if: steps.ensure.outcome != 'success'
         run: echo 'Initial health failed; diagnostics/retry were executed before final verification.'
+
+      - name: Set up Node.js for live browser test
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Install live browser test dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Prepare live Lampac backend URL
+        shell: bash
+        run: |
+          backend="$(python3 -c "import json; print(json.load(open('lab-artifacts/status.json'))['backend'])")"
+          test -n "$backend"
+          echo "LAMPA_TEST_LAMPAC_URL=$backend" >> "$GITHUB_ENV"
+          echo "LAMPA_TEST_PAGES_URL=https://arst113.github.io/lampa-source/test/" >> "$GITHUB_ENV"
+
+      - name: Wait for matching Pages build
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://arst113.github.io/lampa-source/test/build.json'
+          for i in $(seq 1 60); do
+            body="$(curl -fsSL --connect-timeout 10 --max-time 20 "${url}?bootstrap=${GITHUB_RUN_ID}&check=${i}" 2>/dev/null || true)"
+            if printf '%s' "$body" | grep -Fq "\"sha\": \"${GITHUB_SHA}\""; then
+              echo "Pages is serving ${GITHUB_SHA}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Pages did not publish ${GITHUB_SHA} before live test" >&2
+          echo "Last response: ${body:-<empty>}" >&2
+          exit 1
+
+      - name: Run real Codespace-to-Pages browser test
+        run: bash scripts/lab/run-with-heartbeat.sh npm run test:e2e:backend
+
+      - name: Upload live browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-playwright-${{ github.run_id }}
+          path: |
+            playwright-report-live/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload bootstrap diagnostics
         if: always()
