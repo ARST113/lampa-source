@@ -3,7 +3,10 @@
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
   },
   "forwardPorts": [9118],
   "portsAttributes": {
@@ -13,6 +16,6 @@
     }
   },
   "postCreateCommand": "chmod +x .devcontainer/*.sh scripts/lab/*.sh 2>/dev/null || true",
-  "postStartCommand": ".devcontainer/start-lab.sh",
+  "postStartCommand": "bash .devcontainer/start-lab.sh",
   "remoteUser": "vscode"
 }
