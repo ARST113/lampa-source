@@ -48,9 +48,20 @@ async function installPlugin(page, card) {
     window.__resumeRealPlayCalls = [];
     window.__resumeRealNoty = [];
     Lampa.Player.play = function (data) {
-      const safe = Object.assign({}, data || {});
-      if (safe.url) safe.url = String(safe.url);
-      window.__resumeRealPlayCalls.push(safe);
+      window.__resumeRealPlayCalls.push({
+        title: data && data.title,
+        url: String(data && data.url || ''),
+        season: Number(data && data.season || 0),
+        episode: Number(data && data.episode || 0),
+        voice_name: String(data && data.voice_name || ''),
+        isonline: !!(data && data.isonline),
+        timeline: data && data.timeline ? {
+          hash: data.timeline.hash,
+          time: Number(data.timeline.time || 0),
+          duration: Number(data.timeline.duration || 0),
+          percent: Number(data.timeline.percent || 0)
+        } : null
+      });
       return data;
     };
     Lampa.Player.playlist = function (items) { return items; };
