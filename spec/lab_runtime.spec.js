@@ -18,6 +18,14 @@ describe('Codespaces full-stack lab runtime', () => {
     expect(compose).not.toContain('8090:8090');
   });
 
+  it('does not overlay Lampac writable database/cache directories with root-owned named volumes', () => {
+    const compose = read('.devcontainer/lab.compose.yml');
+    expect(compose).not.toContain('/lampac/data');
+    expect(compose).not.toContain('/lampac/cache');
+    expect(compose).not.toContain('lampac-lab-data');
+    expect(compose).not.toContain('lampac-lab-cache');
+  });
+
   it('enables the required Lampac modules without access DB or WAF', () => {
     const conf = read('.devcontainer/lab.init.conf');
     for (const key of ['"jacred": true', '"tmdbProxy": true', '"online": true', '"torrserver": true']) {
