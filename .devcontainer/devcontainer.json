@@ -1,0 +1,18 @@
+{
+  "name": "Lampa Full Stack Lab",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "forwardPorts": [9118],
+  "portsAttributes": {
+    "9118": {
+      "label": "Lampac Full Stack Lab",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "chmod +x .devcontainer/*.sh scripts/lab/*.sh 2>/dev/null || true",
+  "postStartCommand": ".devcontainer/start-lab.sh",
+  "remoteUser": "vscode"
+}
