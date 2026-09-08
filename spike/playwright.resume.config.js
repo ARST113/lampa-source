@@ -13,6 +13,16 @@ module.exports = defineConfig({
     ['html', { open: 'never', outputFolder: '../playwright-report-resume' }],
   ],
   use: {
+    storageState: {
+      cookies: [],
+      origins: [{
+        origin: 'https://arst113.github.io',
+        localStorage: [
+          { name: 'language', value: 'ru' },
+          { name: 'tmdb_lang', value: 'ru' },
+        ],
+      }],
+    },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
