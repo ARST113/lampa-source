@@ -86,9 +86,14 @@
     };
   }
 
+  function runtimeReady(target) {
+    return !!(target && target.appready === true && target.Lampa);
+  }
+
   const api = {
     normalizeBackend,
     buildProfile,
+    runtimeReady,
   };
 
   if (typeof module === 'object' && module.exports) {
@@ -123,8 +128,8 @@
 
   root.__LAMPA_TEST_PROFILE__ = Object.assign({}, selected, {
     enabled: true,
-    version: 2,
-    lampacInit: selected.mode === 'lampac' ? 'pending' : 'not-required',
+    version: 3,
+    lampacInit: selected.mode === 'lampac' ? 'waiting-app' : 'not-required',
     restore,
   });
 
@@ -132,28 +137,10 @@
     if (root.__LAMPA_TEST_PROFILE__) root.__LAMPA_TEST_PROFILE__.lampacInit = state;
   }
 
-  function escapeHtmlAttribute(value) {
-    return String(value)
-      .replace(/&/g, '&amp;')
-      .replace(/"/g, '&quot;')
-      .replace(/</g, '&lt;');
-  }
-
   function loadLampacInit(url) {
     if (!root.document) return;
 
-    // In the published Pages index this profile script is parser-blocking and
-    // immediately precedes app.js. document.write keeps Lampac's generated
-    // lampa_settings authoritative and guarantees it executes before app.js.
-    if (root.document.readyState === 'loading' && root.document.currentScript) {
-      markLampacInit('parser-blocking');
-      root.document.write(
-        '<script src="' + escapeHtmlAttribute(url) + '" ' +
-        'onload="window.__LAMPA_TEST_PROFILE__.lampacInit=\'loaded\'" ' +
-        'onerror="window.__LAMPA_TEST_PROFILE__.lampacInit=\'error\'"><\\/script>',
-      );
-      return;
-    }
+    markLampacInit('loading');
 
     const script = root.document.createElement('script');
     script.src = url;
@@ -163,7 +150,21 @@
     (root.document.head || root.document.documentElement).appendChild(script);
   }
 
-  if (selected.mode === 'lampac') loadLampacInit(selected.lampacInitUrl);
+  function loadLampacInitWhenReady(url) {
+    if (runtimeReady(root)) {
+      loadLampacInit(url);
+      return;
+    }
+
+    const timer = root.setInterval(function () {
+      if (!runtimeReady(root)) return;
+
+      root.clearInterval(timer);
+      loadLampacInit(url);
+    }, 100);
+  }
+
+  if (selected.mode === 'lampac') loadLampacInitWhenReady(selected.lampacInitUrl);
 
   root.addEventListener('pagehide', restore, { once: true });
 })(typeof window !== 'undefined' ? window : null);
