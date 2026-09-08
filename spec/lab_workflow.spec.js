@@ -36,6 +36,22 @@ describe('GitHub Full Stack Lab control workflow', () => {
     expect(workflow).toContain('playwright-report-live');
   });
 
+  it('runs a real Codespace-to-Pages browser integration check during bootstrap', () => {
+    const workflow = read('.github/workflows/lab-bootstrap.yml');
+
+    for (const marker of [
+      'actions/setup-node@v7',
+      'npm install --no-audit --no-fund',
+      'npx playwright install --with-deps chromium',
+      "json.load(open('lab-artifacts/status.json'))['backend']",
+      'LAMPA_TEST_LAMPAC_URL',
+      'npm run test:e2e:backend',
+      'playwright-report-live',
+    ]) {
+      expect(workflow, `bootstrap missing ${marker}`).toContain(marker);
+    }
+  });
+
   it('keeps lifecycle-free controller and heartbeat self-tests in normal CI', () => {
     const workflow = read('.github/workflows/lampa-test-stand.yml');
 
