@@ -1,0 +1,380 @@
+--- watch_resume_v0.2.2.js
++++ watch_resume_v0.2.3.js
+@@ -1,5 +1,5 @@
+ /*
+- * Lampac Resume v0.2.2
++ * Lampac Resume v0.2.3
+  * Recipe-based resume for Lampa internal player, Just+ external player and TorrServer TrackTimecode.
+  *
+  * Design invariant: final playback URLs and credentials are NEVER persisted.
+@@ -172,10 +172,30 @@
+     return base + '/stream/' + encodeURIComponent(fileName) + '?link=' + encodeURIComponent(hash) + '&index=' + index + '&play';
+   }
+ 
++  function episodeIdentity(play) {
++    play = play || {};
++    var season = asInt(play.season, 0);
++    var episode = asInt(play.episode, 0);
++    if (season > 0 || episode > 0) return { season: season, episode: episode };
++
++    var haystack = [
++      play.title, play.name, play.filename, play.file_name, play.path, play.path_human, play.url
++    ].filter(function (value) { return value != null && value !== ''; }).join(' ');
++    var match = haystack.match(/(?:^|[^a-z0-9])s(\d{1,2})[ ._-]*e(\d{1,3})(?:[^a-z0-9]|$)/i);
++    if (!match) return { season: 0, episode: 0 };
++    return { season: asInt(match[1], 0), episode: asInt(match[2], 0) };
++  }
++
+   function mediaType(card, play) {
+-    var type = (card && card.type) || (play && play.type) || '';
+-    if (type) return String(type).toLowerCase() === 'tv' ? 'tv' : 'movie';
+-    if ((card && (card.name || card.original_name || card.first_air_date)) || (play && play.episode != null)) return 'tv';
++    var episode = episodeIdentity(play);
++    if (episode.season > 0 || episode.episode > 0) return 'tv';
++
++    var playType = play && play.type ? String(play.type).toLowerCase() : '';
++    if (playType === 'tv') return 'tv';
++
++    var type = card && card.type ? String(card.type).toLowerCase() : '';
++    if (type === 'tv') return 'tv';
++    if ((card && (card.name || card.original_name || card.first_air_date)) || (play && play.episode != null && asInt(play.episode, 0) > 0)) return 'tv';
+     return 'movie';
+   }
+ 
+@@ -197,6 +217,7 @@
+     card = card || {};
+     play = play || {};
+     var type = mediaType(card, play);
++    var episodic = episodeIdentity(play);
+     var date = card.release_date || card.first_air_date || '';
+     var title = card.title || card.name || play.title || '';
+     var source = card.source || 'tmdb';
+@@ -210,8 +231,8 @@
+       kinopoisk_id: card.kinopoisk_id || card.kp_id || '',
+       title: title,
+       year: String(date || '').slice(0, 4),
+-      season: type === 'tv' ? asInt(play.season, 0) : 0,
+-      episode: type === 'tv' ? asInt(play.episode, 0) : 0
++      season: type === 'tv' ? (asInt(play.season, 0) || episodic.season) : 0,
++      episode: type === 'tv' ? (asInt(play.episode, 0) || episodic.episode) : 0
+     };
+   }
+ 
+@@ -412,6 +433,7 @@
+     buildTorrServerStreamUrl: buildTorrServerStreamUrl,
+     subsetCard: subsetCard,
+     createMedia: createMedia,
++    episodeIdentity: episodeIdentity,
+     buildMediaKey: buildMediaKey,
+     createOnlineRecipe: createOnlineRecipe,
+     progressFromTimelineEvent: progressFromTimelineEvent,
+@@ -433,7 +455,7 @@
+ 
+   var Lampa = window.Lampa;
+   var Core = window.LampacResumeCore;
+-  var VERSION = '0.2.2';
++  var VERSION = '0.2.3';
+   if (window.lampac_resume_plugin_version === VERSION) return;
+   var STORE_KEY = 'lampac_resume_v1';
+   var MAX_RECORDS = 300;
+@@ -508,13 +530,42 @@
+     return fallback || {};
+   }
+ 
++  function legacyTorrentEpisodeRecord(record) {
++    record = record || {};
++    var source = record.source || {};
++    var media = record.media || {};
++    if (source.kind !== 'torrent' || String(media.type || '').toLowerCase() === 'tv') return false;
++    var text = [source.file_name, source.play_title, media.title].join(' ');
++    return /(?:^|[^a-z0-9])s\d{1,2}[ ._-]*e\d{1,3}(?:[^a-z0-9]|$)/i.test(text);
++  }
++
++  function migrateDb(db) {
++    var changed = Number(db.version || 0) < 2;
++    Object.keys(db.items || {}).forEach(function (key) {
++      var record = db.items[key];
++      if (!legacyTorrentEpisodeRecord(record)) return;
++
++      // v0.2.2 stored all episodes of a torrent series under one movie key.
++      // A later playlist item could overwrite the recipe while the progress still belonged to
++      // the earlier episode. Such a record is ambiguous and must not be auto-resumed.
++      delete db.items[key];
++      Object.keys(db.hash_map || {}).forEach(function (hash) {
++        if (db.hash_map[hash] === key) delete db.hash_map[hash];
++      });
++      changed = true;
++      log('migration dropped ambiguous v0.2.2 torrent episode', key);
++    });
++    db.version = 2;
++    return changed;
++  }
++
+   function loadDb() {
+     var raw = Lampa.Storage.get(STORE_KEY, '{}');
+     var db = parseMaybeObject(raw, {});
+     if (!db || typeof db !== 'object') db = {};
+     if (!db.items || typeof db.items !== 'object') db.items = {};
+     if (!db.hash_map || typeof db.hash_map !== 'object') db.hash_map = {};
+-    db.version = 1;
++    if (migrateDb(db)) Lampa.Storage.set(STORE_KEY, db);
+     return db;
+   }
+ 
+@@ -586,9 +637,58 @@
+     return activity.movie || activity.card || {};
+   }
+ 
++  function privateHost(host) {
++    host = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
++    if (host === 'localhost' || host === '::1' || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)) return true;
++    var match = host.match(/^172\.(\d{1,2})\./);
++    return !!(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
++  }
++
++  function normalizeTorrServerBase(raw) {
++    var base = String(raw || '').trim().replace(/\/+$/, '');
++    if (!base) return '';
++    if (/^https?:\/\//i.test(base)) return base;
++    if (/^\/\//.test(base)) {
++      var protocol = (window.location && /^https?:$/.test(window.location.protocol)) ? window.location.protocol : 'https:';
++      return protocol + base;
++    }
++    if (/^\//.test(base)) {
++      try { return new URL(base, window.location.origin).toString().replace(/\/+$/, ''); }
++      catch (_) { return base; }
++    }
++
++    var hostPart = base.split('/')[0].split(':')[0];
++    var protocol = privateHost(hostPart) ? 'http:' : ((window.location && window.location.protocol === 'http:') ? 'http:' : 'https:');
++    return protocol + '//' + base;
++  }
++
++  function torrServerBaseFromStream(raw) {
++    var text = String(raw || '').trim();
++    if (!text) return '';
++    var absolute = normalizeTorrServerBase(text);
++    var parsed;
++    try { parsed = new URL(absolute); }
++    catch (_) { return ''; }
++    var path = parsed.pathname || '';
++    var markers = ['/stream/', '/play/'];
++    var cut = -1;
++    markers.forEach(function (marker) {
++      var idx = path.toLowerCase().indexOf(marker);
++      if (idx >= 0 && (cut < 0 || idx < cut)) cut = idx;
++    });
++    if (cut < 0) return '';
++    var prefix = path.slice(0, cut).replace(/\/+$/, '');
++    return parsed.origin + prefix;
++  }
++
+   function torrServerBase() {
+-    var base = String(Lampa.Storage.get('torrserver_url', '') || '');
+-    return base.replace(/\/+$/, '');
++    var raw = String(Lampa.Storage.get('torrserver_url', '') || '');
++    var normalized = normalizeTorrServerBase(raw);
++    if (normalized && raw && normalized !== raw) {
++      try { Lampa.Storage.set('torrserver_url', normalized); } catch (_) {}
++      log('normalized TorrServer URL', safeUrlForLog(normalized));
++    }
++    return normalized;
+   }
+ 
+   function createTorrentRecipe(play) {
+@@ -596,13 +696,17 @@
+     var parsed = Core.parseTorrServerStream(play.url || '');
+     var hash = Core.normalizeInfoHash(play.torrent_hash || play.hash || (parsed && parsed.info_hash) || '');
+     if (!hash) return null;
++    var episodic = Core.episodeIdentity(play);
+     return {
+       kind: 'torrent',
+       adapter: 'torrserver',
+       info_hash: hash,
+-      file_index: parsed ? parsed.file_index : parseInt(play.file_index || play.index || 0, 10) || 0,
+-      file_name: parsed ? parsed.file_name : String(play.filename || play.title || 'video'),
+-      torrserver_base: torrServerBase()
++      file_index: parsed ? parsed.file_index : parseInt(play.file_index != null ? play.file_index : (play.index != null ? play.index : 0), 10) || 0,
++      file_name: parsed ? parsed.file_name : String(play.filename || play.file_name || play.title || 'video'),
++      play_title: String(play.title || play.name || ''),
++      season: asInt(play.season, 0) || episodic.season,
++      episode: asInt(play.episode, 0) || episodic.episode,
++      torrserver_base: torrServerBaseFromStream(play.url || '') || torrServerBase()
+     };
+   }
+ 
+@@ -886,8 +990,13 @@
+ 
+   function tsEndpoint(record) {
+     var source = record && record.source || {};
+-    var base = torrServerBase() || String(source.torrserver_base || '').replace(/\/+$/, '');
+-    return base ? base + '/viewed' : '';
++    var sourceBase = normalizeTorrServerBase(source.torrserver_base || '');
++    var base = sourceBase || torrServerBase();
++    return base ? base.replace(/\/+$/, '') + '/viewed' : '';
++  }
++
++  function torserverApiAvailable() {
++    return !!(Lampa.Torserver && typeof Lampa.Torserver.viewedSet === 'function' && typeof Lampa.Torserver.viewed === 'function');
+   }
+ 
+   function pushTorrServerViewed(record, force) {
+@@ -895,44 +1004,69 @@
+     var source = record.source;
+     var hash = Core.normalizeInfoHash(source.info_hash);
+     if (!hash) return;
+-    var fileIndex = parseInt(source.file_index || 0, 10) || 0;
+-    if (fileIndex < 1) return;
++    var fileIndex = parseInt(source.file_index, 10);
++    if (!isFinite(fileIndex) || fileIndex < 0) return;
+     var id = hash + ':' + fileIndex;
+     var now = Date.now();
+     if (!force && lastTsPush[id] && now - lastTsPush[id] < TS_PUSH_MS) return;
+     lastTsPush[id] = now;
+ 
+     var seconds = record.progress && !record.progress.completed ? Number(record.progress.position_ms || 0) / 1000 : 0;
++    var success = function () { log('TorrServer viewed saved', hash, fileIndex, seconds); };
++    var failure = function (err) { log('TorrServer viewed save failed', err && (err.message || err.status) || err); };
++
++    if (torserverApiAvailable()) {
++      try {
++        Lampa.Torserver.viewedSet(hash, fileIndex, seconds, success, failure);
++        return;
++      } catch (e) {
++        log('Lampa.Torserver.viewedSet failed; using HTTP fallback', e && e.message || e);
++      }
++    }
++
+     requestJson(tsEndpoint(record), {
+       action: 'set',
+       hash: hash,
+       file_index: fileIndex,
+       timecode: seconds
+-    }, function () {
+-      log('TorrServer viewed saved', hash, fileIndex, seconds);
+-    }, function (err) {
+-      log('TorrServer viewed save failed', err);
+-    });
++    }, success, failure);
+   }
+ 
+   function pullTorrServerViewed(record, callback) {
+     if (!record || !record.source || record.source.kind !== 'torrent') return callback && callback(null);
+     var source = record.source;
+     var hash = Core.normalizeInfoHash(source.info_hash);
+-    var fileIndex = parseInt(source.file_index || 0, 10) || 0;
+-    if (!hash || fileIndex < 1) return callback && callback(null);
+-    requestJson(tsEndpoint(record), {
+-      action: 'list',
+-      hash: hash,
+-      file_index: fileIndex,
+-      timecode: 0
+-    }, function (result) {
++    var fileIndex = parseInt(source.file_index, 10);
++    if (!hash || !isFinite(fileIndex) || fileIndex < 0) return callback && callback(null);
++
++    function consume(result) {
+       var rows = Array.isArray(result) ? result : [];
+       var row = rows.filter(function (item) {
+         return Number(item && item.file_index) === fileIndex;
+       })[0];
+       callback && callback(row && Number(row.timecode) > 0 ? Number(row.timecode) : 0);
+-    }, function () { callback && callback(null); });
++    }
++    function fallback() {
++      requestJson(tsEndpoint(record), {
++        action: 'list',
++        hash: hash,
++        file_index: fileIndex,
++        timecode: 0
++      }, consume, function () { callback && callback(null); });
++    }
++
++    if (torserverApiAvailable()) {
++      try {
++        Lampa.Torserver.viewed(hash, consume, function (err) {
++          log('Lampa.Torserver.viewed failed; using HTTP fallback', err && (err.message || err.status) || err);
++          fallback();
++        });
++        return;
++      } catch (e) {
++        log('Lampa.Torserver.viewed failed; using HTTP fallback', e && e.message || e);
++      }
++    }
++    fallback();
+   }
+ 
+   function indexPlaylist(playlist) {
+@@ -1673,7 +1807,7 @@
+ 
+   function resumeTorrent(record) {
+     var source = record.source || {};
+-    var base = torrServerBase() || source.torrserver_base || '';
++    var base = normalizeTorrServerBase(source.torrserver_base || '') || torrServerBase();
+     var fresh = Core.buildTorrServerStreamUrl(base, source);
+     if (!fresh) {
+       notify('Lampac Resume: не удалось построить TorrServer URL из hash/index');
+@@ -1685,10 +1819,11 @@
+       if (merged) record.progress = merged;
+       var play = {
+         url: fresh,
+-        title: record.media && record.media.title || source.file_name || 'Torrent',
+-        season: record.media && record.media.season || 0,
+-        episode: record.media && record.media.episode || 0,
++        title: source.play_title || (record.media && record.media.title) || source.file_name || 'Torrent',
++        season: record.media && record.media.season || source.season || 0,
++        episode: record.media && record.media.episode || source.episode || 0,
+         torrent_hash: source.info_hash,
++        file_index: source.file_index,
+         timeline: {
+           hash: record.timeline_hash || record.key,
+           time: Number(record.progress && record.progress.position_ms || 0) / 1000,
+@@ -1699,6 +1834,15 @@
+       pendingResumeRecord = record;
+       Lampa.Player.play(play);
+       if (Lampa.Player.playlist) Lampa.Player.playlist([play]);
++      log('torrent resume launched', {
++        key: record.key,
++        hash: source.info_hash,
++        file_index: source.file_index,
++        season: play.season,
++        episode: play.episode,
++        time: play.timeline.time,
++        base: safeUrlForLog(base)
++      });
+     }
+ 
+     pullTorrServerViewed(record, function (seconds) { launch(seconds || 0); });
+@@ -1937,7 +2081,8 @@
+       version: VERSION,
+       currentSession: currentSession,
+       db: loadDb(),
+-      torrserver_url: torrServerBase()
++      torrserver_url: torrServerBase(),
++      torrserver_api: torserverApiAvailable()
+     };
+   }
+ 
+@@ -1954,6 +2099,15 @@
+     }
+   }
+ 
++  function normalizeStoredTorrServerUrl() {
++    var raw = String(Lampa.Storage.get('torrserver_url', '') || '');
++    if (!raw) return;
++    var normalized = normalizeTorrServerBase(raw);
++    if (normalized && normalized !== raw) {
++      try { Lampa.Storage.set('torrserver_url', normalized); } catch (_) {}
++    }
++  }
++
+   adapters['lampac-online'] = { resume: resumeOnline };
+   adapters['torrserver'] = { resume: resumeTorrent };
+ 
+@@ -1961,6 +2115,7 @@
+     if (window.lampac_resume_plugin_version === VERSION) return;
+     window.lampac_resume_plugin = true;
+     window.lampac_resume_plugin_version = VERSION;
++    normalizeStoredTorrServerUrl();
+     installPlayerPatch();
+     installListeners();
