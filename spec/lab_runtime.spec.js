@@ -78,6 +78,45 @@ describe('Codespaces full-stack lab runtime', () => {
     expect(config.listen.scheme).toBe('https');
   });
 
+  it('updates an existing runtime config in place so Docker bind mounts keep the same inode', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lampa-lab-inode-'));
+    const output = path.join(dir, 'init.conf');
+    fs.copyFileSync('.devcontainer/lab.init.conf', output);
+    const before = fs.statSync(output).ino;
+
+    try {
+      const result = spawnSync('bash', [
+        '.devcontainer/render-lab-init.sh',
+        '--input', '.devcontainer/lab.init.conf',
+        '--output', output,
+      ], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          CODESPACE_NAME: '',
+          GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: '',
+          LAB_PUBLIC_HOST: 'silver-space-123-9118.app.github.dev',
+        },
+      });
+
+      expect(result.status, result.stderr || result.stdout).toBe(0);
+      expect(fs.statSync(output).ino).toBe(before);
+      expect(JSON.parse(read(output)).listen.host).toBe('silver-space-123-9118.app.github.dev');
+    }
+    finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('repairs a stale bind mount without restarting an unchanged healthy lab', () => {
+    const start = read('.devcontainer/start-lab.sh');
+    expect(start).toContain('container_conf');
+    expect(start).toContain('cmp -s "$RUNTIME_CONF" "$container_conf"');
+    expect(start).toContain('--force-recreate');
+    expect(start).toContain('config_changed');
+    expect(start).toContain('restart lampac');
+  });
+
   it('enables the required Lampac modules without access DB or WAF', () => {
     const conf = read('.devcontainer/lab.init.conf');
     for (const key of ['"jacred": true', '"tmdbProxy": true', '"online": true', '"torrserver": true']) {
