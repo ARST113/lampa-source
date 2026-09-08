@@ -26,6 +26,16 @@ describe('GitHub Full Stack Lab control workflow', () => {
     }
   });
 
+  it('runs the live backend Playwright suite only for full lab tests', () => {
+    const workflow = read('.github/workflows/lab-control.yml');
+
+    expect(workflow).toContain("steps.route.outputs.action == 'full'");
+    expect(workflow).toContain('LAMPA_TEST_LAMPAC_URL');
+    expect(workflow).toContain('npm run test:e2e:backend');
+    expect(workflow).toContain('bash scripts/lab/run-with-heartbeat.sh');
+    expect(workflow).toContain('playwright-report-live');
+  });
+
   it('keeps lifecycle-free controller and heartbeat self-tests in normal CI', () => {
     const workflow = read('.github/workflows/lampa-test-stand.yml');
 
