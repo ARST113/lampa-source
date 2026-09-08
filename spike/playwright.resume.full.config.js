@@ -5,6 +5,7 @@ module.exports = defineConfig({
   testMatch: [
     '**/lampac-resume-verification.e2e.js',
     '**/lampac-resume-live-real.e2e.js',
+    '**/lampac-resume-silo-regression.e2e.js',
   ],
   timeout: 90_000,
   expect: {
