@@ -58,7 +58,11 @@ describe('Codespaces full-stack lab runtime', () => {
     expect(compose).toContain('torrserver-data:');
     expect(configure).toContain('"TrackTimecode":false');
     expect(configure).toContain('"TrackTimecode":true');
-    expect(configure).toContain('"action":"set","sets"');
+    expect(configure).toContain('enabled=');
+    expect(configure).toContain('payload=');
+    expect(configure).toContain('action');
+    expect(configure).toContain('sets');
+    expect(configure).toContain('$enabled');
     expect(start).toContain('configure-torrserver.sh');
   });
 
