@@ -7,7 +7,7 @@ TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
 set +e
-LAB_HEARTBEAT_SECONDS=1 "$WRAPPER" bash -lc 'sleep 2; exit 7' >"$TMP" 2>&1
+LAB_HEARTBEAT_SECONDS=1 bash "$WRAPPER" bash -lc 'sleep 2; exit 7' >"$TMP" 2>&1
 status=$?
 set -e
 
