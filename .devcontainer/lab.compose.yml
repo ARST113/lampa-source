@@ -4,9 +4,33 @@ services:
   lampac:
     image: ghcr.io/lampac-nextgen/lampac:latest
     container_name: lampa-full-stack-lab
-    ports:
-      - "9118:9118"
+    expose:
+      - "9118"
     shm_size: 1024mb
     restart: unless-stopped
     volumes:
       - "${LAB_INIT_CONF:-./lab.init.conf}:/lampac/init.conf:ro"
+
+  torrserver:
+    image: ghcr.io/yourok/torrserver@sha256:4bf54fbd0cc095cdca8d854f95afee4223072ab7fdf378d0da50e5bb86dd8e77
+    container_name: lampa-full-stack-torrserver
+    expose:
+      - "8090"
+    restart: unless-stopped
+    volumes:
+      - torrserver-data:/opt/ts
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: lampa-full-stack-gateway
+    depends_on:
+      - lampac
+      - torrserver
+    ports:
+      - "9118:9118"
+    restart: unless-stopped
+    volumes:
+      - ./lab.nginx.conf:/etc/nginx/nginx.conf:ro
+
+volumes:
+  torrserver-data:
