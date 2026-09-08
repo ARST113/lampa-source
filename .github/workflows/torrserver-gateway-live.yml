@@ -1,0 +1,90 @@
+name: TorrServer Gateway Live
+
+on:
+  push:
+    branches:
+      - spike/lampac-resume-e2e-20260908
+    paths:
+      - 'spike/torrserver-gateway.RUN'
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      LAB_CODESPACE: lampa-full-stack-lab-r54vrp44jj4cx796
+      BACKEND: https://lampa-full-stack-lab-r54vrp44jj4cx796-9118.app.github.dev
+      FIX_REF: feat/torrserver-tracktimecode-lab
+      STABLE_REF: feat/github-full-stack-lab
+      LAMPA_TEST_LAMPAC_URL: https://lampa-full-stack-lab-r54vrp44jj4cx796-9118.app.github.dev
+      LAMPA_TEST_PAGES_URL: https://arst113.github.io/lampa-source/test/
+
+    steps:
+      - name: Checkout spike tests
+        uses: actions/checkout@v7
+
+      - name: Deploy TorrServer gateway branch to real Codespace
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACES_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="${LAB_CODESPACE}-9118.app.github.dev"
+          gh codespace ssh -c "$LAB_CODESPACE" -- "cd /workspaces/lampa-source && git fetch origin $FIX_REF && git reset --hard FETCH_HEAD && LAB_PUBLIC_HOST=$host bash .devcontainer/start-lab.sh"
+
+      - name: Verify public routed TorrServer contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== version ==='
+          curl -fsS "$BACKEND/version?type=hash"
+          echo
+          echo '=== TorrServer ==='
+          curl -fsS "$BACKEND/ts/echo" | tee /tmp/ts-version
+          grep -Fq 'MatriX.144.1' /tmp/ts-version
+          echo
+          curl -fsS -H 'Content-Type: application/json' -d '{"action":"get"}' "$BACKEND/ts/settings" | tee /tmp/ts-settings
+          grep -Fq '"TrackTimecode":true' /tmp/ts-settings
+          hash='1123456789abcdef0123456789abcdef01234567'
+          curl -fsS -H 'Content-Type: application/json' -d "{\"action\":\"rem\",\"hash\":\"$hash\",\"file_index\":1}" "$BACKEND/ts/viewed" >/dev/null || true
+          curl -fsS -H 'Content-Type: application/json' -d "{\"action\":\"set\",\"hash\":\"$hash\",\"file_index\":1,\"timecode\":65}" "$BACKEND/ts/viewed" >/dev/null
+          curl -fsS -H 'Content-Type: application/json' -d "{\"action\":\"list\",\"hash\":\"$hash\",\"file_index\":1}" "$BACKEND/ts/viewed" | tee /tmp/ts-viewed
+          grep -Fq '"timecode":65' /tmp/ts-viewed
+          echo 'PUBLIC_TRACK_TIMECODE_ROUNDTRIP_OK'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Install browser dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run real Lampac Resume browser suite
+        run: npx playwright test --config=spike/playwright.resume.full.config.js --workers=1
+
+      - name: Restore stable Full Stack Lab
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACES_PAT }}
+        shell: bash
+        run: |
+          host="${LAB_CODESPACE}-9118.app.github.dev"
+          gh codespace ssh -c "$LAB_CODESPACE" -- "cd /workspaces/lampa-source && git fetch origin $STABLE_REF && git reset --hard FETCH_HEAD && LAB_PUBLIC_HOST=$host bash .devcontainer/start-lab.sh"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: torrserver-gateway-live-${{ github.run_id }}
+          path: |
+            playwright-report-resume-full/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
