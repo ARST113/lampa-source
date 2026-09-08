@@ -34,6 +34,23 @@ domain="${domain%.}"
 
 mkdir -p "$(dirname "$output")"
 
+write_output() {
+  local source="$1"
+
+  if [[ -e "$output" ]]; then
+    cat "$source" > "$output"
+    if [[ "$source" != "$input" ]]; then
+      rm -f "$source"
+    fi
+  else
+    if [[ "$source" == "$input" ]]; then
+      cp "$source" "$output"
+    else
+      mv "$source" "$output"
+    fi
+  fi
+}
+
 if [[ -n "$explicit_host" ]]; then
   if [[ ! "$explicit_host" =~ ^[A-Za-z0-9.-]+$ ]]; then
     echo 'LAB_PUBLIC_HOST contains unsupported characters' >&2
@@ -51,7 +68,7 @@ elif [[ -n "$codespace_name" ]]; then
   fi
   public_host="${codespace_name}-9118.${domain}"
 else
-  cp "$input" "$output"
+  write_output "$input"
   exit 0
 fi
 
@@ -73,5 +90,5 @@ awk -v host="$public_host" '
   }
 ' "$input" > "$tmp"
 
-mv "$tmp" "$output"
+write_output "$tmp"
 trap - EXIT
