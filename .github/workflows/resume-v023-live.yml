@@ -81,13 +81,16 @@ jobs:
           gst_code="$(curl -sS -o /tmp/ts-gst -w '%{http_code}' "$BACKEND/ts/gst/echo" || true)"
           echo "GST_PROBE_HTTP=$gst_code (404 is acceptable: Lampa then uses native TorrServer stream)"
 
+      - name: Probe real Silo magnet metadata and stream
+        run: python3 scripts/lab/probe-real-silo-torrent.py
+
       - name: Install browser dependencies
         run: npm install --no-audit --no-fund
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run real Silo E01 to E01 resume regression
+      - name: Run real Silo resume, migration, and Continue UI browser gate
         run: npx playwright test --config=spike/playwright.resume.v023.torrent.config.js --workers=1
 
       - name: Commit tested standalone plugin
@@ -120,6 +123,7 @@ jobs:
           name: lampac-resume-v023-${{ github.run_id }}
           path: |
             plugins/watch_resume/watch_resume.js
+            lab-artifacts/real-silo-torrent.json
             playwright-report-resume-v023-torrent/
             test-results/
           if-no-files-found: ignore
