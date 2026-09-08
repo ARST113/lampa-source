@@ -65,23 +65,29 @@ jobs:
             echo '=== forwarded ports ==='
             gh codespace ports -c "$name" --json sourcePort,visibility,browseUrl || true
             echo
+            echo '=== sync workspace ==='
+            gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && git fetch origin feat/github-full-stack-lab && git reset --hard origin/feat/github-full-stack-lab' || true
+            echo
             echo '=== remote docker ps ==='
             gh codespace ssh -c "$name" 'docker ps -a || true' || true
             echo
             echo '=== workspace ==='
-            gh codespace ssh -c "$name" 'pwd; echo CODESPACE_VSCODE_FOLDER=${CODESPACE_VSCODE_FOLDER:-}; ls -la /workspaces/lampa-source/.devcontainer 2>&1 || true' || true
+            gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && git rev-parse HEAD; ls -la .devcontainer 2>&1 || true' || true
             echo
             echo '=== local 9118 ==='
             gh codespace ssh -c "$name" 'curl -sv --max-time 10 "http://127.0.0.1:9118/version?type=hash" 2>&1 || true' || true
             echo
-            echo '=== Lampac compose logs ==='
-            gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && docker compose -f .devcontainer/lab.compose.yml logs --tail=250 lampac 2>&1 || true' || true
+            echo '=== Lampac compose logs before retry ==='
+            gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && docker compose -f .devcontainer/lab.compose.yml logs --tail=150 lampac 2>&1 || true' || true
             echo
             echo '=== start-lab retry ==='
             gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && bash .devcontainer/start-lab.sh' || true
             echo
             echo '=== docker ps after retry ==='
             gh codespace ssh -c "$name" 'docker ps -a || true' || true
+            echo
+            echo '=== Lampac compose logs after retry ==='
+            gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && docker compose -f .devcontainer/lab.compose.yml logs --tail=150 lampac 2>&1 || true' || true
             echo
             echo '=== unauthenticated public health ==='
             backend="https://${name}-9118.app.github.dev"
@@ -97,9 +103,9 @@ jobs:
           LAB_CODESPACE_REF: feat/github-full-stack-lab
         run: python3 scripts/lab/codespace_control.py ensure
 
-      - name: Fail when initial ensure failed
+      - name: Report initial ensure failure
         if: steps.ensure.outcome != 'success'
-        run: echo 'Initial health failed, but diagnostics/retry may have recovered the lab.'
+        run: echo 'Initial health failed; diagnostics/retry were executed before final verification.'
 
       - name: Upload bootstrap diagnostics
         if: always()
