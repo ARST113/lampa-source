@@ -31,6 +31,19 @@ jobs:
         run: |
           set -euo pipefail
           gh codespace ssh -c "$LAB_CODESPACE" -- 'docker rm -f lampa-full-stack-torrserver >/dev/null 2>&1 || true; docker pull ghcr.io/yourok/torrserver:latest; docker run -d --name lampa-full-stack-torrserver --restart unless-stopped -p 8090:8090 ghcr.io/yourok/torrserver:latest'
+
+          found=''
+          for i in $(seq 1 30); do
+            ports="$(gh codespace ports -c "$LAB_CODESPACE" --json sourcePort,visibility,browseUrl 2>/dev/null || true)"
+            echo "$ports"
+            if printf '%s' "$ports" | grep -q '"sourcePort":8090'; then
+              found=1
+              break
+            fi
+            sleep 2
+          done
+          test -n "$found"
+
           gh codespace ports visibility 8090:public -c "$LAB_CODESPACE"
           for i in $(seq 1 30); do
             if curl -fsS --max-time 10 "$LAMPA_TEST_TORRSERVER_URL/echo"; then exit 0; fi
