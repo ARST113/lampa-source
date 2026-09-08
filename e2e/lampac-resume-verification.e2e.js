@@ -215,7 +215,9 @@ test('TorrServer resume keeps local progress when server TrackTimecode is unavai
     await page.evaluate((key) => Lampa.LampacResume.resume(key), key);
     await page.waitForFunction(() => window.__resumePlayCalls.length > 0, null, { timeout: 15000 });
     const state = await page.evaluate(() => ({ play: window.__resumePlayCalls.at(-1), record: Lampa.LampacResume.list()[0] }));
-    expect(state.play.url).toContain(backend + '/ts/stream/fixture.mkv');
+    const backendHost = new URL(backend).host;
+    expect(state.play.url).toContain(backendHost + '/ts/stream/fixture.mkv');
+    expect(state.play.url).toContain('link=0123456789abcdef0123456789abcdef01234567');
     expect(state.play.url).toContain('index=1');
     expect(state.play.timeline.time).toBe(65);
     expect(noTransientKeys(state.record)).toBeTruthy();
