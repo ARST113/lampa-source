@@ -34,6 +34,13 @@ domain="${domain%.}"
 
 mkdir -p "$(dirname "$output")"
 
+# Docker can leave a bind-mounted file target as a directory after a Codespace
+# stop/start. Such a path cannot be updated in place, so remove only that invalid
+# directory and recreate the runtime config as a regular file below.
+if [[ -d "$output" ]]; then
+  rm -rf -- "$output"
+fi
+
 write_output() {
   local source="$1"
 
