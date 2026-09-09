@@ -3,8 +3,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE="$ROOT/.devcontainer/lab.compose.yml"
-RUNTIME_CONF="${LAB_INIT_CONF:-/tmp/lampa-full-stack-lab.init.conf}"
+RUNTIME_DIR="${LAB_RUNTIME_DIR:-$ROOT/.devcontainer/.runtime}"
+RUNTIME_CONF="${LAB_INIT_CONF:-$RUNTIME_DIR/lab.init.conf}"
 CONTAINER_NAME='lampa-full-stack-lab'
+
+mkdir -p "$(dirname "$RUNTIME_CONF")"
 
 before_hash=''
 if [[ -f "$RUNTIME_CONF" ]]; then
