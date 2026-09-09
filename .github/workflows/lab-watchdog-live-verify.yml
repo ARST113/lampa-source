@@ -1,0 +1,77 @@
+name: Lampa Watchdog One-Shot Verification
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/lab-watchdog-live-verify.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  stop-and-recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      LAB_CODESPACE_NAME: lampa-full-stack-lab-r54vrp44jj4cx796
+      LAB_SOURCE_REF: feat/github-full-stack-lab
+      BACKEND: https://lampa-full-stack-lab-r54vrp44jj4cx796-9118.app.github.dev
+
+    steps:
+      - name: Checkout main watchdog
+        uses: actions/checkout@v7
+
+      - name: Verify watchdog unit tests
+        run: |
+          python3 -m unittest spec/test_lab_watchdog.py
+          python3 -m py_compile scripts/lab/watchdog.py
+
+      - name: Stop Codespace deliberately
+        env:
+          CODESPACES_PAT: ${{ secrets.CODESPACES_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $CODESPACES_PAT" \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "https://api.github.com/user/codespaces/$LAB_CODESPACE_NAME/stop" >/tmp/stop.json || true
+
+          for _ in $(seq 1 120); do
+            state="$(curl -fsS \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer $CODESPACES_PAT" \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "https://api.github.com/user/codespaces/$LAB_CODESPACE_NAME" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state", ""))')"
+            echo "Codespace state: $state"
+            if [[ "$state" == 'Shutdown' || "$state" == 'Stopped' ]]; then
+              break
+            fi
+            sleep 5
+          done
+
+          [[ "$state" == 'Shutdown' || "$state" == 'Stopped' ]]
+          code="$(curl -sS -o /tmp/stopped-body -w '%{http_code}' "$BACKEND/version?type=hash" || true)"
+          echo "STOPPED_BACKEND_HTTP=$code"
+          [[ "$code" != '200' ]]
+
+      - name: Run production watchdog from main
+        env:
+          CODESPACES_PAT: ${{ secrets.CODESPACES_PAT }}
+        run: python3 scripts/lab/watchdog.py
+
+      - name: Prove same public URL recovered
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -fsS -o /tmp/version -w '%{http_code}' "$BACKEND/version?type=hash")"
+          [[ "$code" == '200' ]]
+          test -s /tmp/version
+          curl -fsS "$BACKEND/lampainit.js" -o /tmp/lampainit.js
+          test -s /tmp/lampainit.js
+          echo "RECOVERED_BACKEND_HTTP=$code"
+          echo "RECOVERED_BACKEND=$BACKEND"
