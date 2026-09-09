@@ -44,6 +44,9 @@ jobs:
       - name: Test Codespaces lifecycle controller
         run: python3 -m unittest scripts.lab.test_codespace_control -v
 
+      - name: Test stale runtime config recovery
+        run: bash scripts/lab/test-render-lab-init.sh
+
       - name: Test long-test heartbeat
         run: bash scripts/lab/test-run-with-heartbeat.sh
 
