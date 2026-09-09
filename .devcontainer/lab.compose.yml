@@ -1,0 +1,12 @@
+name: lampa-full-stack-lab
+
+services:
+  lampac:
+    image: ghcr.io/lampac-nextgen/lampac:latest
+    container_name: lampa-full-stack-lab
+    ports:
+      - "9118:9118"
+    shm_size: 1024mb
+    restart: unless-stopped
+    volumes:
+      - "${LAB_INIT_CONF:-./lab.init.conf}:/lampac/init.conf:ro"

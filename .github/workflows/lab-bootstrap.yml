@@ -1,0 +1,186 @@
+name: Lampa Full Stack Lab Bootstrap
+
+on:
+  push:
+    branches:
+      - feat/github-full-stack-lab
+    paths:
+      - '.github/workflows/lab-bootstrap.yml'
+      - '.devcontainer/**'
+      - 'scripts/lab/codespace_control.py'
+      - 'scripts/lab/run-with-heartbeat.sh'
+      - 'test-stand/profile.js'
+      - 'e2e/lampac-live.e2e.js'
+      - 'playwright.live.config.js'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lampa-full-stack-lab-bootstrap
+  cancel-in-progress: true
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Ensure real Codespace lab
+        id: ensure
+        continue-on-error: true
+        env:
+          CODESPACES_PAT: ${{ secrets.CODESPACES_PAT }}
+          LAB_CODESPACE_REF: feat/github-full-stack-lab
+        run: python3 scripts/lab/codespace_control.py ensure
+
+      - name: Resolve existing Codespace
+        if: always()
+        env:
+          CODESPACES_PAT: ${{ secrets.CODESPACES_PAT }}
+          LAB_CODESPACE_REF: feat/github-full-stack-lab
+        run: python3 scripts/lab/codespace_control.py status
+
+      - name: Capture real Codespace diagnostics
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACES_PAT }}
+        shell: bash
+        run: |
+          set -u
+          name="$(python3 - <<'PY'
+          import json
+          try:
+              print(json.load(open('lab-artifacts/status.json'))['name'] or '')
+          except Exception:
+              print('')
+          PY
+          )"
+          if [[ -z "$name" ]]; then
+            echo 'No Codespace name available for diagnostics.'
+            exit 0
+          fi
+
+          mkdir -p lab-artifacts
+          {
+            echo '=== forwarded ports ==='
+            gh codespace ports -c "$name" --json sourcePort,visibility,browseUrl || true
+            echo
+            echo '=== sync workspace ==='
+            gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && git fetch origin feat/github-full-stack-lab && git reset --hard origin/feat/github-full-stack-lab' || true
+            echo
+            echo '=== Codespace environment ==='
+            gh codespace ssh -c "$name" 'printf "CODESPACE_NAME=%s\nGITHUB_CODESPACES_PORT_FORWARDING_DOMAIN=%s\n" "${CODESPACE_NAME:-<unset>}" "${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-<unset>}"' || true
+            echo
+            echo '=== remote docker ps ==='
+            gh codespace ssh -c "$name" 'docker ps -a || true' || true
+            echo
+            echo '=== workspace ==='
+            gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && git rev-parse HEAD; ls -la .devcontainer 2>&1 || true' || true
+            echo
+            echo '=== local 9118 ==='
+            gh codespace ssh -c "$name" 'curl -sv --max-time 10 "http://127.0.0.1:9118/version?type=hash" 2>&1 || true' || true
+            echo
+            echo '=== Lampac compose logs before retry ==='
+            gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && docker compose -f .devcontainer/lab.compose.yml logs --tail=150 lampac 2>&1 || true' || true
+            echo
+            echo '=== start-lab retry ==='
+            gh codespace ssh -c "$name" "cd /workspaces/lampa-source && LAB_PUBLIC_HOST=${name}-9118.app.github.dev bash .devcontainer/start-lab.sh" || true
+            echo
+            echo '=== rendered runtime config ==='
+            gh codespace ssh -c "$name" 'sed -n "1,45p" /tmp/lampa-full-stack-lab.init.conf 2>&1 || true' || true
+            echo
+            echo '=== config inside Lampac container ==='
+            gh codespace ssh -c "$name" 'docker exec lampa-full-stack-lab sh -lc '\''sed -n "1,45p" /lampac/init.conf 2>&1 || true'\''' || true
+            echo
+            echo '=== Lampac bind mounts ==='
+            gh codespace ssh -c "$name" 'docker inspect lampa-full-stack-lab --format '\''{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'\'' 2>&1 || true' || true
+            echo
+            echo '=== generated lampainit host references ==='
+            gh codespace ssh -c "$name" 'curl -fsS --max-time 20 http://127.0.0.1:9118/lampainit.js | grep -Eo "https?://[^\"'\'' ]+" | head -30 || true' || true
+            echo
+            echo '=== docker ps after retry ==='
+            gh codespace ssh -c "$name" 'docker ps -a || true' || true
+            echo
+            echo '=== Lampac compose logs after retry ==='
+            gh codespace ssh -c "$name" 'cd /workspaces/lampa-source && docker compose -f .devcontainer/lab.compose.yml logs --tail=150 lampac 2>&1 || true' || true
+            echo
+            echo '=== unauthenticated public health ==='
+            backend="https://${name}-9118.app.github.dev"
+            curl -sS -D - --max-time 20 "$backend/version?type=hash" -o /tmp/lab-public-body || true
+            head -c 1000 /tmp/lab-public-body 2>/dev/null || true
+            echo
+          } | tee lab-artifacts/remote-diagnostics.txt
+
+      - name: Verify public health after diagnostics
+        env:
+          CODESPACES_PAT: ${{ secrets.CODESPACES_PAT }}
+          LAB_CODESPACE_REF: feat/github-full-stack-lab
+        run: python3 scripts/lab/codespace_control.py ensure
+
+      - name: Report initial ensure failure
+        if: steps.ensure.outcome != 'success'
+        run: echo 'Initial health failed; diagnostics/retry were executed before final verification.'
+
+      - name: Set up Node.js for live browser test
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Install live browser test dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Prepare live Lampac backend URL
+        shell: bash
+        run: |
+          backend="$(python3 -c "import json; print(json.load(open('lab-artifacts/status.json'))['backend'])")"
+          test -n "$backend"
+          echo "LAMPA_TEST_LAMPAC_URL=$backend" >> "$GITHUB_ENV"
+          echo "LAMPA_TEST_PAGES_URL=https://arst113.github.io/lampa-source/test/" >> "$GITHUB_ENV"
+
+      - name: Wait for matching Pages build
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://arst113.github.io/lampa-source/test/build.json'
+          for i in $(seq 1 60); do
+            body="$(curl -fsSL --connect-timeout 10 --max-time 20 "${url}?bootstrap=${GITHUB_RUN_ID}&check=${i}" 2>/dev/null || true)"
+            if printf '%s' "$body" | grep -Fq "\"sha\": \"${GITHUB_SHA}\""; then
+              echo "Pages is serving ${GITHUB_SHA}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Pages did not publish ${GITHUB_SHA} before live test" >&2
+          echo "Last response: ${body:-<empty>}" >&2
+          exit 1
+
+      - name: Run real Codespace-to-Pages browser test
+        run: bash scripts/lab/run-with-heartbeat.sh npm run test:e2e:backend
+
+      - name: Upload live browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-playwright-${{ github.run_id }}
+          path: |
+            playwright-report-live/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload bootstrap diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-bootstrap-${{ github.run_id }}
+          path: lab-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
