@@ -1,0 +1,8 @@
+.verification/
+docs/review-package.txt
+docs/progress.md
+docs/real-lampa*.jpg
+docs/superpowers/
+demo/
+scripts/demo-server.cjs
+node_modules/
