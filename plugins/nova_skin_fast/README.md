@@ -2,12 +2,18 @@
 
 Standalone Lampa UI plugin based on [amikdn/nova_skin.js](https://github.com/amikdn/amikdn.github.io/blob/main/nova_skin.js). This version retains the original Nova interface, online-source cards, hero artwork and TMDB logo loading while adding compatibility and correctness fixes based on the Lampa source API.
 
+## GitHub Pages hosting
+
+The executable plugin is published from the `gh-pages` branch. The primary install URL is `https://arst113.github.io/lampa-source/nova_skin_fast.js` (served directly as JavaScript, HTTP 200). The `main` branch contains the editable source.
+
+For new releases, update both `plugins/nova_skin_fast/nova_skin_fast.js` in `main` and `nova_skin_fast.js` in `gh-pages` to keep the Pages URL in sync.
+
 ## Install
 
 In Lampa, open **Settings → Plugins → Add plugin** and insert:
 
 ```text
-https://raw.githubusercontent.com/ARST113/lampa-source/main/plugins/nova_skin_fast/nova_skin_fast.js
+https://arst113.github.io/lampa-source/nova_skin_fast.js
 ```
 
 Disable other variants of Nova Skin before installing to avoid duplicate UI hooks. Restart Lampa after installation. The plugin has no additional build step.
