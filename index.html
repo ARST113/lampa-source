@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Nova Skin Fast — Lampa plugin</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;max-width:760px;margin:8vh auto;padding:0 22px;line-height:1.65}
+    h1{line-height:1.2}code{overflow-wrap:anywhere}a{color:#4f8aff}
+    .block{border:1px solid #8885;border-radius:12px;padding:18px;margin:18px 0}
+    button{padding:10px 14px;border:1px solid #8889;border-radius:9px;cursor:pointer}
+  </style>
+</head>
+<body>
+  <h1>Nova Skin Fast — MCP Edition</h1>
+  <p>Скин для Lampa. Версия <strong>2026.10.22-mcp1</strong>.</p>
+  <div class="block">
+    <h2>Адрес для установки в Lampa</h2>
+    <p><code id="plugin">https://arst113.github.io/lampa-source/nova_skin_fast.js</code></p>
+    <button id="copy">Скопировать</button>
+    <p><a href="./nova_skin_fast.js">Открыть JavaScript</a></p>
+  </div>
+  <p>Настройки → Плагины → Добавить плагин → вставьте адрес. Перед установкой отключите другие версии Nova Skin.</p>
+  <p>Исходники: <a href="https://github.com/ARST113/lampa-source/blob/main/plugins/nova_skin_fast/nova_skin_fast.js">GitHub</a>.</p>
+  <script>document.getElementById('copy').addEventListener('click',function(){var text=document.getElementById('plugin').textContent;navigator.clipboard.writeText(text).then(function(){document.getElementById('copy').textContent='Скопировано';});});</script>
+</body>
+</html>
